@@ -45,16 +45,10 @@ class _AdminScreenState extends State<AdminScreen>
         automaticallyImplyLeading: false,
         title: Row(
           children: [
-            Container(
+            Image.asset(
+              'assets/images/tooth_logo.png',
               width: 32,
               height: 32,
-              decoration: BoxDecoration(
-                gradient: const LinearGradient(
-                    colors: [_indigo, Color(0xFF0EA5E9)]),
-                borderRadius: BorderRadius.circular(9),
-              ),
-              child: const Icon(Icons.admin_panel_settings_rounded,
-                  color: Colors.white, size: 17),
             ),
             const SizedBox(width: 10),
             Text(tr(widget.isEnglish, 'لوحة الإدارة'),
