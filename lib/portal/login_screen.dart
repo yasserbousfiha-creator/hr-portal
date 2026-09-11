@@ -140,19 +140,10 @@ class _PortalLoginScreenState extends State<PortalLoginScreen> {
             child: Column(
               mainAxisSize: MainAxisSize.min,
               children: [
-                Container(
-                  width: 64,
-                  height: 64,
-                  decoration: BoxDecoration(
-                    gradient: const LinearGradient(
-                      colors: [Color(0xFF06B6D4), Color(0xFF0EA5E9)],
-                      begin: Alignment.topLeft,
-                      end: Alignment.bottomRight,
-                    ),
-                    borderRadius: BorderRadius.circular(18),
-                  ),
-                  child: const Icon(Icons.people_alt_rounded,
-                      color: Colors.white, size: 32),
+                Image.asset(
+                  'assets/images/logo.png',
+                  width: 88,
+                  height: 88,
                 ),
                 const SizedBox(height: 20),
                 Text(tr(_isEnglish, 'بوابة الموظفين'),
