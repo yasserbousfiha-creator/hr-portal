@@ -83,7 +83,14 @@ class _PortalLoginScreenState extends State<PortalLoginScreen> {
         leading: IconButton(
           icon: const Icon(Icons.arrow_back_ios_new, color: Colors.white54, size: 18),
           onPressed: () {
-            if (Navigator.canPop(context)) Navigator.pop(context);
+            // The portal is its own separate app now (not a route inside the
+            // main site's app), so there's nothing to pop back to — this has
+            // to be a real page navigation to the main site's own URL.
+            if (Navigator.canPop(context)) {
+              Navigator.pop(context);
+            } else {
+              html.window.location.assign('/');
+            }
           },
         ),
         elevation: 0,
