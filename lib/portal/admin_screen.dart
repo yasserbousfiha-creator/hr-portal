@@ -1,6 +1,7 @@
 import 'package:flutter/material.dart';
 import 'package:intl/intl.dart' as intl;
 import 'package:supabase_flutter/supabase_flutter.dart';
+import 'custody_widgets.dart';
 import 'portal_client.dart';
 import 'portal_i18n.dart';
 
@@ -1797,6 +1798,8 @@ class _TasksCustodyTabState extends State<_TasksCustodyTab> {
   final _detailsCtrl = TextEditingController();
   final _equipmentCtrl = TextEditingController();
   final _notesCtrl = TextEditingController();
+  final _accessoriesCtrl = TextEditingController();
+  final Set<String> _openHistory = {};
   DateTime? _taskDueAt;
   late final RealtimeChannel _channel;
 
@@ -1816,6 +1819,8 @@ class _TasksCustodyTabState extends State<_TasksCustodyTab> {
         return _blue;
       case 'أعيدت للإدارة':
         return _grey;
+      case 'بانتظار استلام زميل':
+        return _purple;
       default:
         return _amber;
     }
@@ -1963,6 +1968,7 @@ class _TasksCustodyTabState extends State<_TasksCustodyTab> {
     _detailsCtrl.dispose();
     _equipmentCtrl.dispose();
     _notesCtrl.dispose();
+    _accessoriesCtrl.dispose();
     super.dispose();
   }
 
@@ -2043,9 +2049,15 @@ class _TasksCustodyTabState extends State<_TasksCustodyTab> {
           'notes': _notesCtrl.text.trim().isEmpty ? null : _notesCtrl.text.trim(),
           'status': 'بانتظار الاستلام',
           'created_by': 'admin',
+          'accessories': _accessoriesCtrl.text
+              .split(RegExp(r'[,،\n]'))
+              .map((a) => a.trim())
+              .where((a) => a.isNotEmpty)
+              .toList(),
         });
         _equipmentCtrl.clear();
         _notesCtrl.clear();
+        _accessoriesCtrl.clear();
       }
       if (mounted) {
         setState(() => _selectedEmpId = null);
@@ -2196,6 +2208,8 @@ class _TasksCustodyTabState extends State<_TasksCustodyTab> {
                   ),
                 ] else ...[
                   _field(_equipmentCtrl, tr(widget.isEnglish, 'اسم الجهاز/العهدة')),
+                  const SizedBox(height: 10),
+                  _field(_accessoriesCtrl, tr(widget.isEnglish, 'ملحقات العهدة (افصل بينها بفاصلة)')),
                   const SizedBox(height: 10),
                   _field(_notesCtrl, tr(widget.isEnglish, 'ملاحظات (اختياري)'), maxLines: 3),
                 ],
@@ -2412,7 +2426,50 @@ class _TasksCustodyTabState extends State<_TasksCustodyTab> {
                         ),
                       ],
                     ),
+                    if (_mode == 1 && ((it['accessories'] as List?) ?? const []).isNotEmpty) ...[
+                      const SizedBox(height: 8),
+                      AccessoryChips(accessories: (it['accessories'] as List)),
+                    ],
+                    if (_mode == 1 && it['pending_transfer_to'] != null)
+                      Padding(
+                        padding: const EdgeInsets.only(top: 6),
+                        child: Text(
+                          '${tr(widget.isEnglish, 'بانتظار استلام')} ${_empNames[it['pending_transfer_to'].toString()] ?? it['pending_transfer_to']}',
+                          style: TextStyle(fontSize: 12, color: _purple, fontWeight: FontWeight.w600),
+                        ),
+                      ),
                     if (_mode == 1) ..._custodyDetailLines(it),
+                    if (_mode == 1) ...[
+                      Align(
+                        alignment: AlignmentDirectional.centerStart,
+                        child: TextButton.icon(
+                          onPressed: () => setState(() {
+                            final k = it['id'].toString();
+                            if (!_openHistory.remove(k)) _openHistory.add(k);
+                          }),
+                          icon: Icon(
+                            _openHistory.contains(it['id'].toString()) ? Icons.expand_less : Icons.history,
+                            size: 15,
+                          ),
+                          label: Text(
+                            tr(widget.isEnglish,
+                                _openHistory.contains(it['id'].toString()) ? 'إخفاء السجل' : 'سجل العهدة'),
+                            style: const TextStyle(fontSize: 12),
+                          ),
+                          style: TextButton.styleFrom(
+                            foregroundColor: const Color(0x99FFFFFF),
+                            padding: const EdgeInsets.symmetric(horizontal: 4, vertical: 2),
+                          ),
+                        ),
+                      ),
+                      if (_openHistory.contains(it['id'].toString()))
+                        CustodyTimeline(
+                          key: ValueKey('tl-${it['id']}-$status-${it['pending_transfer_to']}'),
+                          itemId: it['id'].toString(),
+                          isEnglish: widget.isEnglish,
+                          names: _empNames,
+                        ),
+                    ],
                     if (canConfirmReturn) ...[
                       const SizedBox(height: 10),
                       Align(

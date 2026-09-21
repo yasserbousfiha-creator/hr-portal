@@ -135,8 +135,7 @@ class _PortalHomeScreenState extends State<PortalHomeScreen> {
       final rows = await portalClient
           .from('portal_custody_items')
           .select('id')
-          .eq('employee_id', empId)
-          .eq('status', 'بانتظار الاستلام');
+          .or('and(employee_id.eq.$empId,status.eq.بانتظار الاستلام),and(pending_transfer_to.eq.$empId,status.eq.بانتظار استلام زميل)');
       if (mounted) setState(() => _pendingCustodyCount = (rows as List).length);
     } catch (_) {}
 
@@ -188,8 +187,7 @@ class _PortalHomeScreenState extends State<PortalHomeScreen> {
               final rows = await portalClient
                   .from('portal_custody_items')
                   .select('id')
-                  .eq('employee_id', empId)
-                  .eq('status', 'بانتظار الاستلام');
+                  .or('and(employee_id.eq.$empId,status.eq.بانتظار الاستلام),and(pending_transfer_to.eq.$empId,status.eq.بانتظار استلام زميل)');
               if (mounted) setState(() => _pendingCustodyCount = (rows as List).length);
             } catch (_) {}
           },
