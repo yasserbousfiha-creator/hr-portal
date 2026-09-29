@@ -4,6 +4,7 @@ import 'package:flutter/material.dart';
 import 'package:supabase_flutter/supabase_flutter.dart';
 import 'portal_client.dart';
 import 'home_screen.dart';
+import 'maintenance_home_screen.dart';
 import 'portal_i18n.dart';
 
 class PortalLoginScreen extends StatefulWidget {
@@ -45,13 +46,24 @@ class _PortalLoginScreenState extends State<PortalLoginScreen> {
     final email = _toEmail(_userCtrl.text);
     setState(() { _loading = true; _error = null; });
     try {
-      await portalClient.auth.signInWithPassword(
+      final res = await portalClient.auth.signInWithPassword(
         email: email,
         password: _passCtrl.text,
       );
+      // Standalone maintenance-technician accounts have no employee_profiles
+      // row at all — role lives in user_metadata (set by the desktop app's
+      // "حسابات فنيي الصيانة" screen) and routes to a completely separate,
+      // restricted shell instead of the normal employee/admin home screen.
+      final isMaintenance = res.user?.userMetadata?['role'] == 'maintenance';
       if (mounted) {
-        Navigator.pushReplacement(context,
-            MaterialPageRoute(builder: (_) => const PortalHomeScreen()));
+        Navigator.pushReplacement(
+          context,
+          MaterialPageRoute(
+            builder: (_) => isMaintenance
+                ? const MaintenanceHomeScreen()
+                : const PortalHomeScreen(),
+          ),
+        );
       }
     } on AuthException catch (e) {
       setState(() => _error = _arabicError(e.message));
