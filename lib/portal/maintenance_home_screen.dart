@@ -17,8 +17,15 @@ class MaintenanceHomeScreen extends StatefulWidget {
 
 class _MaintenanceHomeScreenState extends State<MaintenanceHomeScreen>
     with SingleTickerProviderStateMixin {
-  late final TabController _tabs = TabController(length: 4, vsync: this);
   final bool _isEnglish = false;
+  // 'regular' technicians only log maintenance visits — everything else
+  // (Assets/Suppliers/Maintenance&Warranty and the technician-accounts
+  // tab) is manager-only, both here and at the RLS layer (migration
+  // 20260929170000). Missing level (accounts created before this existed)
+  // defaults to manager, matching the RLS policies' own coalesce default.
+  late final bool _isManager =
+      portalClient.auth.currentUser?.userMetadata?['level'] != 'regular';
+  late final TabController _tabs = TabController(length: _isManager ? 5 : 1, vsync: this);
 
   void _logout() async {
     try {
@@ -55,29 +62,35 @@ class _MaintenanceHomeScreenState extends State<MaintenanceHomeScreen>
             ),
             const SizedBox(width: 8),
           ],
-          bottom: TabBar(
-            controller: _tabs,
-            isScrollable: true,
-            indicatorColor: _indigo,
-            labelColor: _indigo,
-            unselectedLabelColor: Colors.white54,
-            tabs: [
-              Tab(text: tr(_isEnglish, 'الصيانة الدورية PPM')),
-              Tab(text: tr(_isEnglish, 'العهد والأصول')),
-              Tab(text: tr(_isEnglish, 'الموردون')),
-              Tab(text: tr(_isEnglish, 'الصيانة والضمان')),
-            ],
-          ),
+          bottom: _isManager
+              ? TabBar(
+                  controller: _tabs,
+                  isScrollable: true,
+                  indicatorColor: _indigo,
+                  labelColor: _indigo,
+                  unselectedLabelColor: Colors.white54,
+                  tabs: [
+                    Tab(text: tr(_isEnglish, 'الصيانة الدورية PPM')),
+                    Tab(text: tr(_isEnglish, 'العهد والأصول')),
+                    Tab(text: tr(_isEnglish, 'الموردون')),
+                    Tab(text: tr(_isEnglish, 'الصيانة والضمان')),
+                    Tab(text: tr(_isEnglish, 'إدارة الفنيين')),
+                  ],
+                )
+              : null,
         ),
-        body: TabBarView(
-          controller: _tabs,
-          children: [
-            _PpmTab(isEnglish: _isEnglish),
-            _AssetsTab(isEnglish: _isEnglish),
-            _SuppliersTab(isEnglish: _isEnglish),
-            _MaintenanceItemsTab(isEnglish: _isEnglish),
-          ],
-        ),
+        body: _isManager
+            ? TabBarView(
+                controller: _tabs,
+                children: [
+                  _PpmTab(isEnglish: _isEnglish),
+                  _AssetsTab(isEnglish: _isEnglish),
+                  _SuppliersTab(isEnglish: _isEnglish),
+                  _MaintenanceItemsTab(isEnglish: _isEnglish),
+                  _TechniciansTab(isEnglish: _isEnglish),
+                ],
+              )
+            : _PpmTab(isEnglish: _isEnglish, restricted: true),
       ),
     );
   }
@@ -117,7 +130,11 @@ Widget _cardTile({required Widget child}) => Container(
 
 class _PpmTab extends StatefulWidget {
   final bool isEnglish;
-  const _PpmTab({required this.isEnglish});
+  // Regular technicians (level == 'regular') can only log a maintenance
+  // visit — no adding/editing/deleting devices, matching what the RLS
+  // policies from migration 20260929170000 actually allow them to do.
+  final bool restricted;
+  const _PpmTab({required this.isEnglish, this.restricted = false});
   @override
   State<_PpmTab> createState() => _PpmTabState();
 }
@@ -307,11 +324,13 @@ class _PpmTabState extends State<_PpmTab> {
     if (_loading) return const Center(child: CircularProgressIndicator(color: _indigo));
     return Scaffold(
       backgroundColor: _bg,
-      floatingActionButton: FloatingActionButton(
-        backgroundColor: _indigo,
-        onPressed: () => _addOrEditDevice(),
-        child: const Icon(Icons.add),
-      ),
+      floatingActionButton: widget.restricted
+          ? null
+          : FloatingActionButton(
+              backgroundColor: _indigo,
+              onPressed: () => _addOrEditDevice(),
+              child: const Icon(Icons.add),
+            ),
       body: _devices.isEmpty
           ? Center(child: Text(tr(widget.isEnglish, 'لا توجد أجهزة'), style: const TextStyle(color: Colors.white54)))
           : ListView.builder(
@@ -342,11 +361,13 @@ class _PpmTabState extends State<_PpmTab> {
                       const SizedBox(height: 10),
                       Row(children: [
                         TextButton(onPressed: () => _logMaintenance(d), child: Text(tr(widget.isEnglish, 'تسجيل صيانة'))),
-                        TextButton(onPressed: () => _addOrEditDevice(existing: d), child: Text(tr(widget.isEnglish, 'تعديل'))),
-                        TextButton(
-                          onPressed: () => _delete(d),
-                          child: Text(tr(widget.isEnglish, 'حذف'), style: const TextStyle(color: _red)),
-                        ),
+                        if (!widget.restricted) ...[
+                          TextButton(onPressed: () => _addOrEditDevice(existing: d), child: Text(tr(widget.isEnglish, 'تعديل'))),
+                          TextButton(
+                            onPressed: () => _delete(d),
+                            child: Text(tr(widget.isEnglish, 'حذف'), style: const TextStyle(color: _red)),
+                          ),
+                        ],
                       ]),
                     ],
                   ),
@@ -689,6 +710,146 @@ class _MaintenanceItemsTabState extends State<_MaintenanceItemsTab> {
                 );
               },
             ),
+    );
+  }
+}
+
+// ---- Manage regular technicians (managers only) ----
+//
+// Calls the maintenance-team edge function directly (not swift-responder —
+// the portal has no HR_ADMIN_SECRET, by design). That function is gated by
+// the caller's OWN session: it checks this manager's JWT metadata before
+// doing anything, and can only ever create/delete level='regular' accounts,
+// never another manager — see supabase/functions/maintenance-team/index.ts.
+class _TechniciansTab extends StatefulWidget {
+  final bool isEnglish;
+  const _TechniciansTab({required this.isEnglish});
+  @override
+  State<_TechniciansTab> createState() => _TechniciansTabState();
+}
+
+class _TechniciansTabState extends State<_TechniciansTab> {
+  bool _loading = true;
+  String? _error;
+  List<Map<String, dynamic>> _accounts = [];
+
+  @override
+  void initState() {
+    super.initState();
+    _load();
+  }
+
+  Future<Map<String, dynamic>> _call(String action, Map<String, dynamic> payload) async {
+    final res = await portalClient.functions.invoke(
+      'maintenance-team',
+      body: {'action': action, 'payload': payload},
+    );
+    final body = res.data;
+    if (body is Map && body['error'] != null) {
+      throw Exception(body['error']);
+    }
+    return (body as Map)['data'] as Map<String, dynamic>? ?? {};
+  }
+
+  Future<void> _load() async {
+    setState(() { _loading = true; _error = null; });
+    try {
+      final res = await portalClient.functions.invoke(
+        'maintenance-team',
+        body: {'action': 'listRegularAccounts', 'payload': {}},
+      );
+      final body = res.data;
+      if (body is Map && body['error'] != null) throw Exception(body['error']);
+      final rows = ((body as Map)['data'] as List? ?? []);
+      if (mounted) setState(() => _accounts = rows.cast<Map<String, dynamic>>());
+    } catch (e) {
+      if (mounted) setState(() => _error = '$e');
+    } finally {
+      if (mounted) setState(() => _loading = false);
+    }
+  }
+
+  Future<void> _addAccount() async {
+    final userCtrl = TextEditingController();
+    final passCtrl = TextEditingController();
+    final nameCtrl = TextEditingController();
+    final saved = await showDialog<bool>(
+      context: context,
+      builder: (ctx) => AlertDialog(
+        backgroundColor: _card,
+        title: Text(tr(widget.isEnglish, 'فني صيانة جديد (عادي)'), style: const TextStyle(color: Colors.white)),
+        content: SizedBox(
+          width: 340,
+          child: Column(mainAxisSize: MainAxisSize.min, children: [
+            TextField(controller: nameCtrl, style: const TextStyle(color: Colors.white), decoration: _dec(tr(widget.isEnglish, 'الاسم'))),
+            const SizedBox(height: 12),
+            TextField(controller: userCtrl, style: const TextStyle(color: Colors.white), decoration: _dec(tr(widget.isEnglish, 'اسم المستخدم'))),
+            const SizedBox(height: 12),
+            TextField(controller: passCtrl, obscureText: true, style: const TextStyle(color: Colors.white), decoration: _dec(tr(widget.isEnglish, 'كلمة المرور'))),
+          ]),
+        ),
+        actions: [
+          TextButton(onPressed: () => Navigator.pop(ctx, false), child: Text(tr(widget.isEnglish, 'إلغاء'))),
+          FilledButton(onPressed: () => Navigator.pop(ctx, true), child: Text(tr(widget.isEnglish, 'إنشاء'))),
+        ],
+      ),
+    );
+    if (saved != true || userCtrl.text.trim().isEmpty || passCtrl.text.trim().isEmpty) return;
+    try {
+      await _call('createRegularAccount', {
+        'username': userCtrl.text.trim(),
+        'password': passCtrl.text.trim(),
+        'name': nameCtrl.text.trim().isEmpty ? userCtrl.text.trim() : nameCtrl.text.trim(),
+      });
+      _load();
+    } catch (e) {
+      if (mounted) setState(() => _error = '$e');
+    }
+  }
+
+  Future<void> _deleteAccount(Map<String, dynamic> a) async {
+    try {
+      await _call('deleteRegularAccount', {'userId': a['userId']});
+      _load();
+    } catch (e) {
+      if (mounted) setState(() => _error = '$e');
+    }
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    if (_loading) return const Center(child: CircularProgressIndicator(color: _indigo));
+    return Scaffold(
+      backgroundColor: _bg,
+      floatingActionButton: FloatingActionButton(backgroundColor: _indigo, onPressed: _addAccount, child: const Icon(Icons.add)),
+      body: ListView(
+        padding: const EdgeInsets.all(16),
+        children: [
+          Text(
+            tr(widget.isEnglish, 'حسابات فنيين عاديين — يسجّلون صيانة فقط، بلا وصول للعهد أو الموردين أو الصيانة والضمان.'),
+            style: const TextStyle(color: Colors.white54, fontSize: 12),
+          ),
+          if (_error != null) ...[
+            const SizedBox(height: 8),
+            Text(_error!, style: const TextStyle(color: _red, fontSize: 12)),
+          ],
+          const SizedBox(height: 12),
+          if (_accounts.isEmpty)
+            Text(tr(widget.isEnglish, 'لا توجد حسابات بعد.'), style: const TextStyle(color: Colors.white38, fontSize: 12))
+          else
+            ..._accounts.map((a) => _cardTile(
+                  child: Row(children: [
+                    Expanded(
+                      child: Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
+                        Text(a['name'] as String? ?? '—', style: const TextStyle(color: Colors.white, fontWeight: FontWeight.w700)),
+                        Text(a['email'] as String? ?? '', style: const TextStyle(color: Colors.white54, fontSize: 11)),
+                      ]),
+                    ),
+                    IconButton(icon: const Icon(Icons.delete, color: _red, size: 18), onPressed: () => _deleteAccount(a)),
+                  ]),
+                )),
+        ],
+      ),
     );
   }
 }
