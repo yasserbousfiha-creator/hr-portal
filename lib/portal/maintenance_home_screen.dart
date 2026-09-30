@@ -184,6 +184,13 @@ class _PpmTabState extends State<_PpmTab> {
     return '${d.year}-${d.month.toString().padLeft(2, '0')}-${d.day.toString().padLeft(2, '0')}';
   }
 
+  String _fmtDateTime(String? iso) {
+    if (iso == null) return '—';
+    final d = DateTime.tryParse(iso);
+    if (d == null) return iso;
+    return '${_fmt(iso)} ${d.hour.toString().padLeft(2, '0')}:${d.minute.toString().padLeft(2, '0')}';
+  }
+
   Future<void> _addOrEditDevice({Map<String, dynamic>? existing}) async {
     final nameCtrl = TextEditingController(text: existing?['name'] as String? ?? '');
     final numberCtrl = TextEditingController(text: existing?['device_number'] as String? ?? '');
@@ -231,6 +238,7 @@ class _PpmTabState extends State<_PpmTab> {
           'device_number': numberCtrl.text.trim().isEmpty ? null : numberCtrl.text.trim(),
           'model_version': modelCtrl.text.trim().isEmpty ? null : modelCtrl.text.trim(),
           'interval_months': interval,
+          'added_by': _currentTechName(),
           'created_at': DateTime.now().toIso8601String(),
         });
       } else {
@@ -293,15 +301,22 @@ class _PpmTabState extends State<_PpmTab> {
         'performed_at': now.toIso8601String(),
         'next_due_date': nextDue,
         'type': isEmergency ? 'طارئة' : 'دورية',
+        'technician': _currentTechName(),
         'notes': notesCtrl.text.trim().isEmpty ? null : notesCtrl.text.trim(),
         'created_at': now.toIso8601String(),
       });
       await portalClient.from('ppm_devices').update({
         'last_maintenance_date': now.toIso8601String(),
         'next_due_date': nextDue,
+        'last_maintenance_by': _currentTechName(),
       }).eq('id', device['id']);
       _load();
     } catch (_) {}
+  }
+
+  String? _currentTechName() {
+    final meta = portalClient.auth.currentUser?.userMetadata;
+    return (meta?['name'] as String?) ?? portalClient.auth.currentUser?.email;
   }
 
   DateTime _addMonths(DateTime d, int months) {
@@ -355,9 +370,25 @@ class _PpmTabState extends State<_PpmTab> {
                       ]),
                       const SizedBox(height: 4),
                       Text(
-                        '${tr(widget.isEnglish, "آخر صيانة")}: ${_fmt(d['last_maintenance_date'] as String?)}   •   ${tr(widget.isEnglish, "القادمة")}: ${_fmt(d['next_due_date'] as String?)}',
+                        '${tr(widget.isEnglish, "آخر صيانة")}: ${_fmtDateTime(d['last_maintenance_date'] as String?)}   •   ${tr(widget.isEnglish, "القادمة")}: ${_fmt(d['next_due_date'] as String?)}',
                         style: const TextStyle(color: Colors.white54, fontSize: 12),
                       ),
+                      if ((d['last_maintenance_by'] as String?)?.isNotEmpty ?? false)
+                        Padding(
+                          padding: const EdgeInsets.only(top: 2),
+                          child: Text(
+                            '${tr(widget.isEnglish, "آخر صيانة بواسطة")}: ${d['last_maintenance_by']}',
+                            style: const TextStyle(color: Colors.white38, fontSize: 11),
+                          ),
+                        ),
+                      if ((d['added_by'] as String?)?.isNotEmpty ?? false)
+                        Padding(
+                          padding: const EdgeInsets.only(top: 2),
+                          child: Text(
+                            '${tr(widget.isEnglish, "أضيف بواسطة")}: ${d['added_by']} — ${_fmtDateTime(d['created_at'] as String?)}',
+                            style: const TextStyle(color: Colors.white38, fontSize: 11),
+                          ),
+                        ),
                       const SizedBox(height: 10),
                       Row(children: [
                         TextButton(onPressed: () => _logMaintenance(d), child: Text(tr(widget.isEnglish, 'تسجيل صيانة'))),
