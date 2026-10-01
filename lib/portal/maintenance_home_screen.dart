@@ -522,6 +522,97 @@ class _PpmTabState extends State<_PpmTab> {
     );
   }
 
+  // Same idea as the desktop's "طباعة تقرير الصيانة" (generateAndPrintPpmReport
+  // in pdf_helper.dart) — a combined view of every logged visit across every
+  // device, not just one device's own history. No PDF export here (printing
+  // isn't available the same way in a browser) — just the same "see
+  // everything at once" view, with the device name attached to each row
+  // since ppm_maintenance_log itself has no device name of its own.
+  Future<void> _showAllLogs() async {
+    List<Map<String, dynamic>> logs = [];
+    Map<String, Map<String, dynamic>> devicesById = {};
+    try {
+      final devicesData = await portalClient.from('ppm_devices').select('id, name, device_number, model_version');
+      devicesById = {
+        for (final d in List<Map<String, dynamic>>.from(devicesData as List)) d['id'] as String: d,
+      };
+      final logsData = await portalClient.from('ppm_maintenance_log').select().order('performed_at', ascending: false);
+      logs = List<Map<String, dynamic>>.from(logsData as List);
+    } catch (_) {}
+    if (!mounted) return;
+    await showDialog<void>(
+      context: context,
+      builder: (ctx) => AlertDialog(
+        backgroundColor: _card,
+        title: Text(tr(widget.isEnglish, 'كل سجلات الصيانة'), style: const TextStyle(color: Colors.white)),
+        content: SizedBox(
+          width: 420,
+          child: logs.isEmpty
+              ? Padding(
+                  padding: const EdgeInsets.symmetric(vertical: 16),
+                  child: Text(tr(widget.isEnglish, 'لا يوجد سجل صيانة بعد'), style: const TextStyle(color: Colors.white54)),
+                )
+              : SingleChildScrollView(
+                  child: Column(
+                    children: logs.map((h) {
+                      final device = devicesById[h['device_id']];
+                      final isEmergency = h['type'] == 'طارئة';
+                      return Container(
+                        margin: const EdgeInsets.only(bottom: 8),
+                        padding: const EdgeInsets.all(10),
+                        decoration: BoxDecoration(
+                          color: _bg,
+                          borderRadius: BorderRadius.circular(8),
+                          border: Border.all(color: Colors.white12),
+                        ),
+                        child: Column(
+                          crossAxisAlignment: CrossAxisAlignment.start,
+                          children: [
+                            Row(
+                              mainAxisAlignment: MainAxisAlignment.spaceBetween,
+                              children: [
+                                Expanded(
+                                  child: Text(
+                                    device?['name'] as String? ?? tr(widget.isEnglish, 'جهاز محذوف'),
+                                    style: const TextStyle(color: Colors.white, fontWeight: FontWeight.w700, fontSize: 13),
+                                  ),
+                                ),
+                                if (isEmergency)
+                                  Container(
+                                    padding: const EdgeInsets.symmetric(horizontal: 7, vertical: 2),
+                                    decoration: BoxDecoration(color: _amber.withValues(alpha: 0.15), borderRadius: BorderRadius.circular(20)),
+                                    child: Text(tr(widget.isEnglish, 'طارئة'), style: const TextStyle(color: _amber, fontSize: 9.5, fontWeight: FontWeight.w700)),
+                                  ),
+                              ],
+                            ),
+                            const SizedBox(height: 2),
+                            Row(
+                              mainAxisAlignment: MainAxisAlignment.spaceBetween,
+                              children: [
+                                Text(_fmtDateTime(h['performed_at'] as String?), style: const TextStyle(color: Colors.white54, fontSize: 11.5)),
+                                if ((h['technician'] as String?)?.isNotEmpty ?? false)
+                                  Text(h['technician'] as String, style: const TextStyle(color: Colors.white54, fontSize: 11)),
+                              ],
+                            ),
+                            if ((h['notes'] as String?)?.isNotEmpty ?? false)
+                              Padding(
+                                padding: const EdgeInsets.only(top: 4),
+                                child: Text(h['notes'] as String, style: const TextStyle(color: Colors.white70, fontSize: 12)),
+                              ),
+                          ],
+                        ),
+                      );
+                    }).toList(),
+                  ),
+                ),
+        ),
+        actions: [
+          TextButton(onPressed: () => Navigator.pop(ctx), child: Text(tr(widget.isEnglish, 'إغلاق'))),
+        ],
+      ),
+    );
+  }
+
   Future<void> _delete(Map<String, dynamic> d) async {
     try {
       await portalClient.from('ppm_devices').delete().eq('id', d['id']);
@@ -543,9 +634,23 @@ class _PpmTabState extends State<_PpmTab> {
         onPressed: () => _addOrEditDevice(),
         child: const Icon(Icons.add),
       ),
-      body: _devices.isEmpty
-          ? Center(child: Text(tr(widget.isEnglish, 'لا توجد أجهزة'), style: const TextStyle(color: Colors.white54)))
-          : ListView.builder(
+      body: Column(
+        children: [
+          Padding(
+            padding: const EdgeInsets.fromLTRB(16, 12, 16, 0),
+            child: Align(
+              alignment: Alignment.centerLeft,
+              child: TextButton.icon(
+                onPressed: _showAllLogs,
+                icon: const Icon(Icons.fact_check_outlined, size: 16, color: _indigo),
+                label: Text(tr(widget.isEnglish, 'كل سجلات الصيانة'), style: const TextStyle(color: _indigo)),
+              ),
+            ),
+          ),
+          Expanded(
+            child: _devices.isEmpty
+                ? Center(child: Text(tr(widget.isEnglish, 'لا توجد أجهزة'), style: const TextStyle(color: Colors.white54)))
+                : ListView.builder(
               padding: const EdgeInsets.all(16),
               itemCount: _devices.length,
               itemBuilder: (context, i) {
@@ -609,6 +714,9 @@ class _PpmTabState extends State<_PpmTab> {
                 );
               },
             ),
+          ),
+        ],
+      ),
     );
   }
 }
