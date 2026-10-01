@@ -352,6 +352,96 @@ class _PpmTabState extends State<_PpmTab> {
     return DateTime(year, month, d.day > lastDay ? lastDay : d.day);
   }
 
+  // Read-only on the portal, for both levels — matches what the RLS
+  // policies actually allow a regular technician (SELECT only, no
+  // UPDATE/DELETE on ppm_maintenance_log); editing a logged visit stays a
+  // desktop-admin-only feature (see hrmanager's ppm_screen.dart).
+  Future<void> _showHistory(Map<String, dynamic> device) async {
+    List<Map<String, dynamic>> history = [];
+    try {
+      final data = await portalClient
+          .from('ppm_maintenance_log')
+          .select()
+          .eq('device_id', device['id'])
+          .order('performed_at', ascending: false);
+      history = List<Map<String, dynamic>>.from(data as List);
+    } catch (_) {}
+    if (!mounted) return;
+    await showDialog<void>(
+      context: context,
+      builder: (ctx) => AlertDialog(
+        backgroundColor: _card,
+        title: Text('${tr(widget.isEnglish, "سجل الصيانة")} — ${device['name']}',
+            style: const TextStyle(color: Colors.white)),
+        content: SizedBox(
+          width: 360,
+          child: history.isEmpty
+              ? Padding(
+                  padding: const EdgeInsets.symmetric(vertical: 16),
+                  child: Text(tr(widget.isEnglish, 'لا يوجد سجل صيانة بعد'), style: const TextStyle(color: Colors.white54)),
+                )
+              : SingleChildScrollView(
+                  child: Column(
+                    children: history.map((h) {
+                      final next = DateTime.tryParse(h['next_due_date'] as String? ?? '');
+                      final isEmergency = h['type'] == 'طارئة';
+                      return Container(
+                        margin: const EdgeInsets.only(bottom: 8),
+                        padding: const EdgeInsets.all(10),
+                        decoration: BoxDecoration(
+                          color: _bg,
+                          borderRadius: BorderRadius.circular(8),
+                          border: Border.all(color: Colors.white12),
+                        ),
+                        child: Column(
+                          crossAxisAlignment: CrossAxisAlignment.start,
+                          children: [
+                            Row(
+                              mainAxisAlignment: MainAxisAlignment.spaceBetween,
+                              children: [
+                                Expanded(
+                                  child: Row(children: [
+                                    Text(_fmtDateTime(h['performed_at'] as String?),
+                                        style: const TextStyle(color: Colors.white, fontWeight: FontWeight.w600, fontSize: 12.5)),
+                                    if (isEmergency) ...[
+                                      const SizedBox(width: 6),
+                                      Container(
+                                        padding: const EdgeInsets.symmetric(horizontal: 7, vertical: 2),
+                                        decoration: BoxDecoration(color: _amber.withValues(alpha: 0.15), borderRadius: BorderRadius.circular(20)),
+                                        child: Text(tr(widget.isEnglish, 'طارئة'), style: const TextStyle(color: _amber, fontSize: 9.5, fontWeight: FontWeight.w700)),
+                                      ),
+                                    ],
+                                  ]),
+                                ),
+                                if ((h['technician'] as String?)?.isNotEmpty ?? false)
+                                  Text(h['technician'] as String, style: const TextStyle(color: Colors.white54, fontSize: 11)),
+                              ],
+                            ),
+                            if (next != null && !isEmergency)
+                              Padding(
+                                padding: const EdgeInsets.only(top: 4),
+                                child: Text('${tr(widget.isEnglish, "الصيانة القادمة")}: ${_fmt(h['next_due_date'] as String?)}',
+                                    style: const TextStyle(color: Colors.white54, fontSize: 11)),
+                              ),
+                            if ((h['notes'] as String?)?.isNotEmpty ?? false)
+                              Padding(
+                                padding: const EdgeInsets.only(top: 4),
+                                child: Text(h['notes'] as String, style: const TextStyle(color: Colors.white70, fontSize: 12)),
+                              ),
+                          ],
+                        ),
+                      );
+                    }).toList(),
+                  ),
+                ),
+        ),
+        actions: [
+          TextButton(onPressed: () => Navigator.pop(ctx), child: Text(tr(widget.isEnglish, 'إغلاق'))),
+        ],
+      ),
+    );
+  }
+
   Future<void> _delete(Map<String, dynamic> d) async {
     try {
       await portalClient.from('ppm_devices').delete().eq('id', d['id']);
@@ -424,6 +514,7 @@ class _PpmTabState extends State<_PpmTab> {
                       const SizedBox(height: 10),
                       Row(children: [
                         TextButton(onPressed: () => _logMaintenance(d), child: Text(tr(widget.isEnglish, 'تسجيل صيانة'))),
+                        TextButton(onPressed: () => _showHistory(d), child: Text(tr(widget.isEnglish, 'السجل'))),
                         TextButton(onPressed: () => _addOrEditDevice(existing: d), child: Text(tr(widget.isEnglish, 'تعديل'))),
                         // Delete stays manager-only — RLS has no delete
                         // policy for level='regular' on ppm_devices.
