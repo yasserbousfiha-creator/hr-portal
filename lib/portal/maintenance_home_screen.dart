@@ -356,6 +356,79 @@ class _PpmTabState extends State<_PpmTab> {
   // policies actually allow a regular technician (SELECT only, no
   // UPDATE/DELETE on ppm_maintenance_log); editing a logged visit stays a
   // desktop-admin-only feature (see hrmanager's ppm_screen.dart).
+  // Editable by both levels (requested 2026-10-01) — regular technicians
+  // got UPDATE on ppm_maintenance_log in migration 20261001120000
+  // alongside the SELECT+INSERT they already had; managers already had it
+  // via their existing ALL policy, this was previously just not exposed in
+  // the portal UI.
+  Future<void> _editLogEntry(Map<String, dynamic> entry, void Function(void Function()) setOuter, List<Map<String, dynamic>> history, String deviceId) async {
+    DateTime performedAt = DateTime.tryParse(entry['performed_at'] as String? ?? '') ?? DateTime.now();
+    bool isEmergency = entry['type'] == 'طارئة';
+    final notesCtrl = TextEditingController(text: entry['notes'] as String? ?? '');
+    final technicianCtrl = TextEditingController(text: entry['technician'] as String? ?? '');
+    final saved = await showDialog<bool>(
+      context: context,
+      builder: (ctx) => StatefulBuilder(
+        builder: (ctx, setSt) => AlertDialog(
+          backgroundColor: _card,
+          title: Text(tr(widget.isEnglish, 'تعديل بيانات الصيانة'), style: const TextStyle(color: Colors.white)),
+          content: SizedBox(
+            width: 340,
+            child: Column(mainAxisSize: MainAxisSize.min, children: [
+              ListTile(
+                contentPadding: EdgeInsets.zero,
+                title: Text(tr(widget.isEnglish, 'تاريخ الصيانة'), style: const TextStyle(color: Colors.white70, fontSize: 13)),
+                trailing: Text(_fmt(performedAt.toIso8601String()), style: const TextStyle(color: Colors.white)),
+                onTap: () async {
+                  final picked = await showDatePicker(
+                    context: ctx, initialDate: performedAt, firstDate: DateTime(2020), lastDate: DateTime(2040),
+                  );
+                  if (picked != null) {
+                    setSt(() => performedAt = DateTime(picked.year, picked.month, picked.day, performedAt.hour, performedAt.minute));
+                  }
+                },
+              ),
+              const SizedBox(height: 6),
+              CheckboxListTile(
+                value: isEmergency,
+                onChanged: (v) => setSt(() => isEmergency = v ?? false),
+                title: Text(tr(widget.isEnglish, 'صيانة طارئة'), style: const TextStyle(color: Colors.white, fontSize: 13)),
+                controlAffinity: ListTileControlAffinity.leading,
+                activeColor: _indigo,
+              ),
+              const SizedBox(height: 6),
+              TextField(controller: technicianCtrl, style: const TextStyle(color: Colors.white), decoration: _dec(tr(widget.isEnglish, 'الفني/المسؤول'))),
+              const SizedBox(height: 12),
+              TextField(controller: notesCtrl, style: const TextStyle(color: Colors.white), decoration: _dec(tr(widget.isEnglish, 'ملاحظات'))),
+            ]),
+          ),
+          actions: [
+            TextButton(onPressed: () => Navigator.pop(ctx, false), child: Text(tr(widget.isEnglish, 'إلغاء'))),
+            FilledButton(onPressed: () => Navigator.pop(ctx, true), child: Text(tr(widget.isEnglish, 'حفظ'))),
+          ],
+        ),
+      ),
+    );
+    if (saved != true) return;
+    try {
+      await portalClient.from('ppm_maintenance_log').update({
+        'performed_at': performedAt.toIso8601String(),
+        'type': isEmergency ? 'طارئة' : 'دورية',
+        'technician': technicianCtrl.text.trim().isEmpty ? null : technicianCtrl.text.trim(),
+        'notes': notesCtrl.text.trim().isEmpty ? null : notesCtrl.text.trim(),
+      }).eq('id', entry['id']);
+      final fresh = await portalClient
+          .from('ppm_maintenance_log')
+          .select()
+          .eq('device_id', deviceId)
+          .order('performed_at', ascending: false);
+      history
+        ..clear()
+        ..addAll(List<Map<String, dynamic>>.from(fresh as List));
+      setOuter(() {});
+    } catch (_) {}
+  }
+
   Future<void> _showHistory(Map<String, dynamic> device) async {
     List<Map<String, dynamic>> history = [];
     try {
@@ -369,7 +442,8 @@ class _PpmTabState extends State<_PpmTab> {
     if (!mounted) return;
     await showDialog<void>(
       context: context,
-      builder: (ctx) => AlertDialog(
+      builder: (ctx) => StatefulBuilder(
+        builder: (ctx, setOuter) => AlertDialog(
         backgroundColor: _card,
         title: Text('${tr(widget.isEnglish, "سجل الصيانة")} — ${device['name']}',
             style: const TextStyle(color: Colors.white)),
@@ -415,6 +489,11 @@ class _PpmTabState extends State<_PpmTab> {
                                 ),
                                 if ((h['technician'] as String?)?.isNotEmpty ?? false)
                                   Text(h['technician'] as String, style: const TextStyle(color: Colors.white54, fontSize: 11)),
+                                const SizedBox(width: 6),
+                                InkWell(
+                                  onTap: () => _editLogEntry(h, setOuter, history, device['id'] as String),
+                                  child: const Icon(Icons.edit, size: 14, color: Colors.white54),
+                                ),
                               ],
                             ),
                             if (next != null && !isEmergency)
@@ -438,6 +517,7 @@ class _PpmTabState extends State<_PpmTab> {
         actions: [
           TextButton(onPressed: () => Navigator.pop(ctx), child: Text(tr(widget.isEnglish, 'إغلاق'))),
         ],
+        ),
       ),
     );
   }
