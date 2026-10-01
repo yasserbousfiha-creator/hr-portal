@@ -195,7 +195,9 @@ class _PpmTabState extends State<_PpmTab> {
     final nameCtrl = TextEditingController(text: existing?['name'] as String? ?? '');
     final numberCtrl = TextEditingController(text: existing?['device_number'] as String? ?? '');
     final modelCtrl = TextEditingController(text: existing?['model_version'] as String? ?? '');
+    final locationCtrl = TextEditingController(text: existing?['location'] as String? ?? '');
     int interval = existing?['interval_months'] as int? ?? 3;
+    bool locationError = false;
     final saved = await showDialog<bool>(
       context: context,
       builder: (ctx) => StatefulBuilder(
@@ -212,6 +214,18 @@ class _PpmTabState extends State<_PpmTab> {
               const SizedBox(height: 12),
               TextField(controller: modelCtrl, style: const TextStyle(color: Colors.white), decoration: _dec(tr(widget.isEnglish, 'الموديل/الإصدار'))),
               const SizedBox(height: 12),
+              TextField(
+                controller: locationCtrl,
+                style: const TextStyle(color: Colors.white),
+                decoration: _dec('${tr(widget.isEnglish, 'الموقع')} *').copyWith(
+                  errorText: locationError ? tr(widget.isEnglish, 'الموقع مطلوب') : null,
+                  errorStyle: const TextStyle(color: _red),
+                ),
+                onChanged: (_) {
+                  if (locationError) setSt(() => locationError = false);
+                },
+              ),
+              const SizedBox(height: 12),
               DropdownButtonFormField<int>(
                 initialValue: interval,
                 dropdownColor: _card,
@@ -224,7 +238,16 @@ class _PpmTabState extends State<_PpmTab> {
           ),
           actions: [
             TextButton(onPressed: () => Navigator.pop(ctx, false), child: Text(tr(widget.isEnglish, 'إلغاء'))),
-            FilledButton(onPressed: () => Navigator.pop(ctx, true), child: Text(tr(widget.isEnglish, 'حفظ'))),
+            FilledButton(
+              onPressed: () {
+                if (existing == null && locationCtrl.text.trim().isEmpty) {
+                  setSt(() => locationError = true);
+                  return;
+                }
+                Navigator.pop(ctx, true);
+              },
+              child: Text(tr(widget.isEnglish, 'حفظ')),
+            ),
           ],
         ),
       ),
@@ -238,6 +261,7 @@ class _PpmTabState extends State<_PpmTab> {
           'device_number': numberCtrl.text.trim().isEmpty ? null : numberCtrl.text.trim(),
           'model_version': modelCtrl.text.trim().isEmpty ? null : modelCtrl.text.trim(),
           'interval_months': interval,
+          'location': locationCtrl.text.trim(),
           'added_by': _currentTechName(),
           'created_at': DateTime.now().toIso8601String(),
         });
@@ -247,6 +271,7 @@ class _PpmTabState extends State<_PpmTab> {
           'device_number': numberCtrl.text.trim(),
           'model_version': modelCtrl.text.trim(),
           'interval_months': interval,
+          'location': locationCtrl.text.trim(),
         }).eq('id', existing['id']);
       }
       _load();
@@ -339,13 +364,15 @@ class _PpmTabState extends State<_PpmTab> {
     if (_loading) return const Center(child: CircularProgressIndicator(color: _indigo));
     return Scaffold(
       backgroundColor: _bg,
-      floatingActionButton: widget.restricted
-          ? null
-          : FloatingActionButton(
-              backgroundColor: _indigo,
-              onPressed: () => _addOrEditDevice(),
-              child: const Icon(Icons.add),
-            ),
+      // Both levels can add/edit devices (regular technicians are only
+      // blocked from deleting one — see the button row below). RLS was
+      // extended to match (migration 20261001100000): regular now has
+      // INSERT alongside its existing SELECT/UPDATE on ppm_devices.
+      floatingActionButton: FloatingActionButton(
+        backgroundColor: _indigo,
+        onPressed: () => _addOrEditDevice(),
+        child: const Icon(Icons.add),
+      ),
       body: _devices.isEmpty
           ? Center(child: Text(tr(widget.isEnglish, 'لا توجد أجهزة'), style: const TextStyle(color: Colors.white54)))
           : ListView.builder(
@@ -369,6 +396,11 @@ class _PpmTabState extends State<_PpmTab> {
                         ),
                       ]),
                       const SizedBox(height: 4),
+                      if ((d['location'] as String?)?.isNotEmpty ?? false)
+                        Text(
+                          '📍 ${d['location']}',
+                          style: const TextStyle(color: Colors.white70, fontSize: 12),
+                        ),
                       Text(
                         '${tr(widget.isEnglish, "آخر صيانة")}: ${_fmtDateTime(d['last_maintenance_date'] as String?)}   •   ${tr(widget.isEnglish, "القادمة")}: ${_fmt(d['next_due_date'] as String?)}',
                         style: const TextStyle(color: Colors.white54, fontSize: 12),
@@ -392,13 +424,14 @@ class _PpmTabState extends State<_PpmTab> {
                       const SizedBox(height: 10),
                       Row(children: [
                         TextButton(onPressed: () => _logMaintenance(d), child: Text(tr(widget.isEnglish, 'تسجيل صيانة'))),
-                        if (!widget.restricted) ...[
-                          TextButton(onPressed: () => _addOrEditDevice(existing: d), child: Text(tr(widget.isEnglish, 'تعديل'))),
+                        TextButton(onPressed: () => _addOrEditDevice(existing: d), child: Text(tr(widget.isEnglish, 'تعديل'))),
+                        // Delete stays manager-only — RLS has no delete
+                        // policy for level='regular' on ppm_devices.
+                        if (!widget.restricted)
                           TextButton(
                             onPressed: () => _delete(d),
                             child: Text(tr(widget.isEnglish, 'حذف'), style: const TextStyle(color: _red)),
                           ),
-                        ],
                       ]),
                     ],
                   ),
