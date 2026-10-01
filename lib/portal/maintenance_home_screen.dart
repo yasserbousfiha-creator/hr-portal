@@ -144,27 +144,18 @@ class _PpmTabState extends State<_PpmTab> {
   bool _loading = true;
   List<Map<String, dynamic>> _devices = [];
 
-  // Split requested 2026-10-01 — same idea as the desktop's two-tab PPM
-  // screen: periodic (the device list, unchanged) and emergency (its own
-  // place to log/browse emergency visits) are now separate tabs here too.
-  int _activeTab = 0;
-  List<Map<String, dynamic>>? _emergencyLogs;
-  bool _emergencyLoading = false;
+  // The periodic/emergency split tried as two tabs (2026-10-01) was undone
+  // the same day: "نلغي التبويبين، بس نخليها بشكل مرتب كي نفرق بين الدورية
+  // وغير الدورية" — back to one screen, differentiated by the طارئة badge
+  // already shown on log entries (see _showHistory/_showAllLogs) instead of
+  // a separate tab. The quick "log an emergency visit by searching any
+  // device" entry point (_showLogEmergencyDialog) was kept as its own
+  // button rather than removed outright — still useful on its own.
 
   @override
   void initState() {
     super.initState();
     _load();
-  }
-
-  Future<void> _loadEmergencyLogs() async {
-    setState(() => _emergencyLoading = true);
-    try {
-      final data = await portalClient.from('ppm_maintenance_log').select().eq('type', 'طارئة').order('performed_at', ascending: false);
-      if (mounted) setState(() { _emergencyLogs = List<Map<String, dynamic>>.from(data as List); _emergencyLoading = false; });
-    } catch (_) {
-      if (mounted) setState(() => _emergencyLoading = false);
-    }
   }
 
   /// Logs an emergency visit without going through the periodic device
@@ -254,7 +245,6 @@ class _PpmTabState extends State<_PpmTab> {
         'last_maintenance_by': technicianCtrl.text.trim().isEmpty ? _currentTechName() : technicianCtrl.text.trim(),
       }).eq('id', selectedDevice!['id']);
       _load();
-      _loadEmergencyLogs();
     } catch (_) {}
   }
 
@@ -647,7 +637,7 @@ class _PpmTabState extends State<_PpmTab> {
       devicesById = {
         for (final d in List<Map<String, dynamic>>.from(devicesData as List)) d['id'] as String: d,
       };
-      final logsData = await portalClient.from('ppm_maintenance_log').select().eq('type', 'دورية').order('performed_at', ascending: false);
+      final logsData = await portalClient.from('ppm_maintenance_log').select().order('performed_at', ascending: false);
       logs = List<Map<String, dynamic>>.from(logsData as List);
     } catch (_) {}
     if (!mounted) return;
@@ -655,7 +645,7 @@ class _PpmTabState extends State<_PpmTab> {
       context: context,
       builder: (ctx) => AlertDialog(
         backgroundColor: _card,
-        title: Text(tr(widget.isEnglish, 'كل سجلات الصيانة الدورية'), style: const TextStyle(color: Colors.white)),
+        title: Text(tr(widget.isEnglish, 'كل سجلات الصيانة'), style: const TextStyle(color: Colors.white)),
         content: SizedBox(
           width: 420,
           child: logs.isEmpty
@@ -728,7 +718,7 @@ class _PpmTabState extends State<_PpmTab> {
         actions: [
           if (logs.isNotEmpty)
             TextButton.icon(
-              onPressed: () => exportPpmReportPdf(title: 'تقرير الصيانة الدورية', logs: logs, devicesById: devicesById),
+              onPressed: () => exportPpmReportPdf(title: 'تقرير الصيانة', logs: logs, devicesById: devicesById),
               icon: const Icon(Icons.picture_as_pdf_outlined, size: 16, color: _indigo),
               label: Text(tr(widget.isEnglish, 'تصدير PDF'), style: const TextStyle(color: _indigo)),
             ),
@@ -754,66 +744,31 @@ class _PpmTabState extends State<_PpmTab> {
       // blocked from deleting one — see the button row below). RLS was
       // extended to match (migration 20261001100000): regular now has
       // INSERT alongside its existing SELECT/UPDATE on ppm_devices.
-      floatingActionButton: _activeTab == 1
-          ? FloatingActionButton(
-              backgroundColor: _red,
-              onPressed: _showLogEmergencyDialog,
-              child: const Icon(Icons.warning_amber_rounded),
-            )
-          : FloatingActionButton(
-              backgroundColor: _indigo,
-              onPressed: () => _addOrEditDevice(),
-              child: const Icon(Icons.add),
-            ),
+      floatingActionButton: FloatingActionButton(
+        backgroundColor: _indigo,
+        onPressed: () => _addOrEditDevice(),
+        child: const Icon(Icons.add),
+      ),
       body: Column(
         children: [
           Padding(
             padding: const EdgeInsets.fromLTRB(16, 12, 16, 0),
             child: Row(
               children: [
-                Expanded(
-                  child: Container(
-                    padding: const EdgeInsets.all(3),
-                    decoration: BoxDecoration(
-                      color: _card,
-                      borderRadius: BorderRadius.circular(10),
-                      border: Border.all(color: Colors.white12),
-                    ),
-                    child: Row(children: [
-                      Expanded(
-                        child: _PpmTabButton(
-                          label: tr(widget.isEnglish, 'الصيانة الدورية'),
-                          isActive: _activeTab == 0,
-                          onTap: () => setState(() => _activeTab = 0),
-                        ),
-                      ),
-                      Expanded(
-                        child: _PpmTabButton(
-                          label: tr(widget.isEnglish, 'الصيانة الطارئة'),
-                          isActive: _activeTab == 1,
-                          onTap: () {
-                            setState(() => _activeTab = 1);
-                            if (_emergencyLogs == null) _loadEmergencyLogs();
-                          },
-                        ),
-                      ),
-                    ]),
-                  ),
+                TextButton.icon(
+                  onPressed: _showLogEmergencyDialog,
+                  icon: const Icon(Icons.warning_amber_rounded, size: 16, color: _red),
+                  label: Text(tr(widget.isEnglish, 'تسجيل صيانة طارئة'), style: const TextStyle(color: _red)),
                 ),
-                if (_activeTab == 0) ...[
-                  const SizedBox(width: 8),
-                  TextButton.icon(
-                    onPressed: _showAllLogs,
-                    icon: const Icon(Icons.fact_check_outlined, size: 16, color: _indigo),
-                    label: Text(tr(widget.isEnglish, 'كل السجلات'), style: const TextStyle(color: _indigo)),
-                  ),
-                ],
+                const Spacer(),
+                TextButton.icon(
+                  onPressed: _showAllLogs,
+                  icon: const Icon(Icons.fact_check_outlined, size: 16, color: _indigo),
+                  label: Text(tr(widget.isEnglish, 'كل السجلات'), style: const TextStyle(color: _indigo)),
+                ),
               ],
             ),
           ),
-          if (_activeTab == 1)
-            Expanded(child: _buildEmergencyTab())
-          else
           Expanded(
             child: _devices.isEmpty
                 ? Center(child: Text(tr(widget.isEnglish, 'لا توجد أجهزة'), style: const TextStyle(color: Colors.white54)))
@@ -883,119 +838,6 @@ class _PpmTabState extends State<_PpmTab> {
             ),
           ),
         ],
-      ),
-    );
-  }
-
-  Widget _buildEmergencyTab() {
-    return ListView(
-      padding: const EdgeInsets.all(16),
-      children: [
-        Row(children: [
-          Expanded(
-            child: Text(
-              tr(widget.isEnglish, 'كل زيارات الصيانة الطارئة المسجّلة، بلا اعتبار لجدول الصيانة الدورية.'),
-              style: const TextStyle(color: Colors.white54, fontSize: 12.5),
-            ),
-          ),
-          if ((_emergencyLogs ?? []).isNotEmpty)
-            TextButton.icon(
-              onPressed: () => exportPpmReportPdf(
-                title: 'تقرير الصيانة الطارئة',
-                logs: _emergencyLogs ?? [],
-                devicesById: {for (final d in _devices) d['id'] as String: d},
-              ),
-              icon: const Icon(Icons.picture_as_pdf_outlined, size: 16, color: _indigo),
-              label: Text(tr(widget.isEnglish, 'تصدير PDF'), style: const TextStyle(color: _indigo)),
-            ),
-        ]),
-        const SizedBox(height: 14),
-        if (_emergencyLoading)
-          const Padding(padding: EdgeInsets.all(40), child: Center(child: CircularProgressIndicator(color: _indigo)))
-        else if ((_emergencyLogs ?? []).isEmpty)
-          Padding(
-            padding: const EdgeInsets.symmetric(vertical: 40),
-            child: Center(child: Text(tr(widget.isEnglish, 'لا توجد صيانة طارئة مسجّلة'), style: const TextStyle(color: Colors.white38))),
-          )
-        else
-          ...(_emergencyLogs ?? []).map((h) {
-            Map<String, dynamic>? device;
-            for (final d in _devices) {
-              if (d['id'] == h['device_id']) { device = d; break; }
-            }
-            return _cardTile(
-              child: Row(children: [
-                Expanded(
-                  child: Column(
-                    crossAxisAlignment: CrossAxisAlignment.start,
-                    children: [
-                      InkWell(
-                        onTap: device == null ? null : () => _showHistory(device!),
-                        child: Text(
-                          device?['name'] as String? ?? tr(widget.isEnglish, 'جهاز محذوف'),
-                          style: TextStyle(
-                            color: device == null ? Colors.white : _indigo,
-                            fontWeight: FontWeight.w700,
-                            decoration: device == null ? null : TextDecoration.underline,
-                          ),
-                        ),
-                      ),
-                      const SizedBox(height: 2),
-                      Text(
-                        '${_fmtDateTime(h['performed_at'] as String?)}'
-                        '${(h['technician'] as String?)?.isNotEmpty ?? false ? '   •   ${h['technician']}' : ''}',
-                        style: const TextStyle(color: Colors.white54, fontSize: 12),
-                      ),
-                      if ((h['notes'] as String?)?.isNotEmpty ?? false)
-                        Padding(
-                          padding: const EdgeInsets.only(top: 4),
-                          child: Text(h['notes'] as String, style: const TextStyle(color: Colors.white70, fontSize: 12)),
-                        ),
-                    ],
-                  ),
-                ),
-                InkWell(
-                  onTap: () => _editLogEntry(h, _loadEmergencyLogs),
-                  child: const Padding(
-                    padding: EdgeInsets.all(6),
-                    child: Icon(Icons.edit, size: 15, color: Colors.white54),
-                  ),
-                ),
-              ]),
-            );
-          }),
-      ],
-    );
-  }
-}
-
-class _PpmTabButton extends StatelessWidget {
-  final String label;
-  final bool isActive;
-  final VoidCallback onTap;
-  const _PpmTabButton({required this.label, required this.isActive, required this.onTap});
-
-  @override
-  Widget build(BuildContext context) {
-    return InkWell(
-      onTap: onTap,
-      borderRadius: BorderRadius.circular(8),
-      child: AnimatedContainer(
-        duration: const Duration(milliseconds: 140),
-        padding: const EdgeInsets.symmetric(vertical: 9),
-        decoration: BoxDecoration(
-          color: isActive ? _indigo : Colors.transparent,
-          borderRadius: BorderRadius.circular(8),
-        ),
-        child: Text(
-          label,
-          textAlign: TextAlign.center,
-          style: TextStyle(
-            fontSize: 13,
-            fontWeight: isActive ? FontWeight.w700 : FontWeight.w500,
-            color: isActive ? Colors.white : Colors.white54,
-          ),
-        ),
       ),
     );
   }
