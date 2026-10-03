@@ -363,6 +363,22 @@ class _PpmTabState extends State<_PpmTab> {
                   if (locationError) setSt(() => locationError = false);
                 },
               ),
+              const SizedBox(height: 6),
+              Wrap(
+                spacing: 6,
+                runSpacing: 6,
+                children: [
+                  for (final loc in ({for (final d in _devices) ((d['location'] as String?) ?? '').trim()}
+                      .where((s) => s.isNotEmpty)
+                      .toList()
+                    ..sort()))
+                    ActionChip(
+                      label: Text(loc, style: const TextStyle(fontSize: 11.5, color: _indigo)),
+                      backgroundColor: _indigo.withValues(alpha: 0.12),
+                      onPressed: () => setSt(() => locationCtrl.text = loc),
+                    ),
+                ],
+              ),
               const SizedBox(height: 12),
               DropdownButtonFormField<int>(
                 initialValue: interval,
