@@ -173,7 +173,11 @@ class _PpmTabState extends State<_PpmTab> {
         builder: (ctx, setSt) {
           final matches = deviceQuery.trim().isEmpty
               ? _devices
-              : _devices.where((d) => (d['name'] as String? ?? '').toLowerCase().contains(deviceQuery.trim().toLowerCase())).toList();
+              : _devices.where((d) {
+                  final q = deviceQuery.trim().toLowerCase();
+                  return (d['name'] as String? ?? '').toLowerCase().contains(q) ||
+                      (d['serial_number'] as String? ?? '').toLowerCase().contains(q);
+                }).toList();
           return AlertDialog(
             backgroundColor: _card,
             title: Text(tr(widget.isEnglish, 'تسجيل صيانة طارئة'), style: const TextStyle(color: Colors.white)),
@@ -192,7 +196,15 @@ class _PpmTabState extends State<_PpmTab> {
                     padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 8),
                     decoration: BoxDecoration(color: _indigo.withValues(alpha: 0.15), borderRadius: BorderRadius.circular(8)),
                     child: Row(children: [
-                      Expanded(child: Text(selectedDevice!['name'] as String? ?? '', style: const TextStyle(color: _indigo, fontWeight: FontWeight.w600))),
+                      Expanded(
+                        child: Text(
+                          [
+                            selectedDevice!['name'] as String? ?? '',
+                            if ((selectedDevice!['serial_number'] as String?)?.isNotEmpty ?? false) 'S/N: ${selectedDevice!['serial_number']}',
+                          ].join('  •  '),
+                          style: const TextStyle(color: _indigo, fontWeight: FontWeight.w600),
+                        ),
+                      ),
                       InkWell(onTap: () => setSt(() => selectedDevice = null), child: const Icon(Icons.close, size: 14, color: _indigo)),
                     ]),
                   )
@@ -205,7 +217,20 @@ class _PpmTabState extends State<_PpmTab> {
                             onTap: () => setSt(() { selectedDevice = d; deviceQuery = d['name'] as String? ?? ''; }),
                             child: Padding(
                               padding: const EdgeInsets.symmetric(vertical: 6),
-                              child: Text(d['name'] as String? ?? '', style: const TextStyle(color: Colors.white)),
+                              child: Column(
+                                crossAxisAlignment: CrossAxisAlignment.start,
+                                children: [
+                                  Text(d['name'] as String? ?? '', style: const TextStyle(color: Colors.white)),
+                                  if ([d['serial_number'], d['location']].any((v) => (v as String?)?.isNotEmpty ?? false))
+                                    Text(
+                                      [
+                                        if ((d['serial_number'] as String?)?.isNotEmpty ?? false) 'S/N: ${d['serial_number']}',
+                                        if ((d['location'] as String?)?.isNotEmpty ?? false) d['location'],
+                                      ].join('  •  '),
+                                      style: const TextStyle(color: Colors.white54, fontSize: 11),
+                                    ),
+                                ],
+                              ),
                             ),
                           )).toList(),
                     ),
