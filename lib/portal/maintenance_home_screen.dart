@@ -965,7 +965,10 @@ class _PpmTabState extends State<_PpmTab> {
         children: [
           Padding(
             padding: const EdgeInsets.fromLTRB(16, 12, 16, 0),
-            child: Row(
+            child: Wrap(
+              spacing: 8,
+              runSpacing: 6,
+              crossAxisAlignment: WrapCrossAlignment.center,
               children: [
                 TextButton.icon(
                   onPressed: _showLogEmergencyDialog,
@@ -980,7 +983,6 @@ class _PpmTabState extends State<_PpmTab> {
                     if (v) _loadRecent();
                   },
                 ),
-                const Spacer(),
                 TextButton.icon(
                   onPressed: _showAllLogs,
                   icon: const Icon(Icons.fact_check_outlined, size: 16, color: _indigo),
