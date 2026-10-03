@@ -105,12 +105,6 @@ Future<void> exportPpmReportPdf({
   final pdf = pw.Document(theme: pw.ThemeData.withFont(base: regular, bold: bold));
   final now = DateTime.now();
 
-  String detailLine(Map<String, dynamic> d) => [
-        if (_nonEmpty(d['manufacturer']) != null) 'الشركة المصنعة: ${d['manufacturer']}',
-        if (_nonEmpty(d['model_version']) != null) 'الموديل: ${d['model_version']}',
-        if (_nonEmpty(d['serial_number']) != null) 'الرقم التسلسلي: ${d['serial_number']}',
-        if (_nonEmpty(d['location']) != null) 'القسم: ${d['location']}',
-      ].join('   •   ');
 
   pw.Widget tableOf(List<Map<String, dynamic>> rows) => pw.Table(
         border: pw.TableBorder.all(color: PdfColors.grey200),
@@ -151,31 +145,23 @@ Future<void> exportPpmReportPdf({
         ],
       );
 
-  pw.Widget visitPage(Map<String, dynamic> h, pw.MemoryImage img) {
-    final device = devicesById[h['device_id']] ?? const <String, dynamic>{};
-    final details = detailLine(device);
-    final notes = _nonEmpty(h['notes']);
-    final tech = _nonEmpty(h['technician']);
-    return pw.SizedBox(
-      height: 600,
+  pw.Widget visitFrame(Map<String, dynamic> h, List<pw.MemoryImage> images) {
+    final imageHeight = images.length > 1 ? 300.0 : 480.0;
+    return pw.Container(
+      padding: const pw.EdgeInsets.all(12),
+      decoration: pw.BoxDecoration(
+        border: pw.Border.all(color: PdfColors.indigo300, width: 1.5),
+        borderRadius: pw.BorderRadius.circular(8),
+      ),
       child: pw.Column(
         crossAxisAlignment: pw.CrossAxisAlignment.start,
         children: [
-          pw.Text(device['name'] as String? ?? 'جهاز محذوف', style: pw.TextStyle(font: bold, fontSize: 14)),
-          if (details.isNotEmpty) ...[
-            pw.SizedBox(height: 3),
-            pw.Text(details, style: const pw.TextStyle(fontSize: 9.5, color: PdfColors.grey700)),
+          tableOf([h]),
+          pw.SizedBox(height: 12),
+          for (final img in images) ...[
+            pw.Center(child: pw.Image(img, height: imageHeight, fit: pw.BoxFit.contain)),
+            pw.SizedBox(height: 10),
           ],
-          pw.SizedBox(height: 4),
-          pw.Text(
-            'التاريخ: ${_fmtDateTime(h['performed_at'] as String?)}   •   '
-            'النوع: ${h['type'] == 'طارئة' ? 'طارئة' : 'دورية'}   •   '
-            'الفني: ${tech ?? '—'}',
-            style: const pw.TextStyle(fontSize: 9.5),
-          ),
-          if (notes != null) pw.Text('ملاحظات: $notes', style: const pw.TextStyle(fontSize: 9.5)),
-          pw.SizedBox(height: 10),
-          pw.Expanded(child: pw.Center(child: pw.Image(img, fit: pw.BoxFit.contain))),
         ],
       ),
     );
@@ -186,22 +172,21 @@ Future<void> exportPpmReportPdf({
     body.add(pw.Text('لا يوجد سجل صيانة بعد', style: const pw.TextStyle(fontSize: 11)));
   } else {
     final pending = <Map<String, dynamic>>[];
+    var pagesAdded = false;
     for (final h in entries) {
       final images = imagesByLog[h['id']] ?? const <pw.MemoryImage>[];
       if (images.isEmpty) {
         pending.add(h);
         continue;
       }
-      if (pending.isNotEmpty) {
-        body.add(tableOf(List.of(pending)));
-        pending.clear();
-      }
-      for (final img in images) {
-        body.add(pw.NewPage());
-        body.add(visitPage(h, img));
-      }
+      body.add(pw.NewPage());
+      body.add(visitFrame(h, images));
+      pagesAdded = true;
     }
-    if (pending.isNotEmpty) body.add(tableOf(List.of(pending)));
+    if (pending.isNotEmpty) {
+      if (pagesAdded) body.add(pw.NewPage());
+      body.add(tableOf(List.of(pending)));
+    }
   }
 
   pdf.addPage(
