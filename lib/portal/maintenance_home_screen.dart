@@ -914,6 +914,16 @@ class _PpmTabState extends State<_PpmTab> {
                       padding: const EdgeInsets.only(bottom: 6),
                       child: Text('${r.$1}: ${r.$2}', style: const TextStyle(color: Colors.white70, fontSize: 13)),
                     ),
+                if (device != null) ...[
+                  const SizedBox(height: 10),
+                  FilledButton(
+                    onPressed: () async {
+                      Navigator.pop(ctx);
+                      await _logMaintenance(device);
+                    },
+                    child: Text(tr(widget.isEnglish, 'تسجيل صيانة وإرفاق صورة')),
+                  ),
+                ],
                 for (final k in keys) ...[
                   const SizedBox(height: 10),
                   FutureBuilder<String>(
