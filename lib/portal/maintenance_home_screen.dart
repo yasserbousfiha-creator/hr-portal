@@ -164,7 +164,7 @@ class _PpmTabState extends State<_PpmTab> {
     Map<String, dynamic>? selectedDevice;
     DateTime performedAt = DateTime.now();
     final notesCtrl = TextEditingController();
-    final technicianCtrl = TextEditingController(text: _currentTechName() ?? '');
+    final technicianName = _currentTechName() ?? '';
     String deviceQuery = '';
 
     final saved = await showDialog<bool>(
@@ -211,7 +211,10 @@ class _PpmTabState extends State<_PpmTab> {
                     ),
                   ),
                 const SizedBox(height: 12),
-                TextField(controller: technicianCtrl, style: const TextStyle(color: Colors.white), decoration: _dec(tr(widget.isEnglish, 'الفني/المسؤول'))),
+                InputDecorator(
+                  decoration: _dec(tr(widget.isEnglish, 'الفني/المسؤول')),
+                  child: Text(technicianName, style: const TextStyle(color: Colors.white)),
+                ),
                 const SizedBox(height: 12),
                 TextField(controller: notesCtrl, style: const TextStyle(color: Colors.white), decoration: _dec(tr(widget.isEnglish, 'ملاحظات (اختياري)'))),
               ]),
@@ -236,13 +239,13 @@ class _PpmTabState extends State<_PpmTab> {
         'performed_at': now.toIso8601String(),
         'next_due_date': selectedDevice!['next_due_date'],
         'type': 'طارئة',
-        'technician': technicianCtrl.text.trim().isEmpty ? null : technicianCtrl.text.trim(),
+        'technician': technicianName.isEmpty ? null : technicianName,
         'notes': notesCtrl.text.trim().isEmpty ? null : notesCtrl.text.trim(),
         'created_at': now.toIso8601String(),
       });
       await portalClient.from('ppm_devices').update({
         'last_maintenance_date': now.toIso8601String(),
-        'last_maintenance_by': technicianCtrl.text.trim().isEmpty ? _currentTechName() : technicianCtrl.text.trim(),
+        'last_maintenance_by': technicianName.isEmpty ? null : technicianName,
       }).eq('id', selectedDevice!['id']);
       _load();
     } catch (_) {}
