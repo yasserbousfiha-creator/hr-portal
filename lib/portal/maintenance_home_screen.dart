@@ -1105,6 +1105,16 @@ class _PpmTabState extends State<_PpmTab> {
                     if (v) _loadRecent();
                   },
                 ),
+                if (_recentOnly && _recentLogs.isNotEmpty)
+                  TextButton.icon(
+                    onPressed: () => exportPpmReportPdf(
+                      title: 'تقرير الصيانة آخر 30 يوماً',
+                      logs: _recentLogs,
+                      devicesById: {for (final d in _devices) d['id'] as String: d},
+                    ),
+                    icon: const Icon(Icons.picture_as_pdf_outlined, size: 16, color: _indigo),
+                    label: Text(tr(widget.isEnglish, 'طباعة آخر 30 يوماً'), style: const TextStyle(color: _indigo)),
+                  ),
                 TextButton.icon(
                   onPressed: _showAllLogs,
                   icon: const Icon(Icons.fact_check_outlined, size: 16, color: _indigo),
