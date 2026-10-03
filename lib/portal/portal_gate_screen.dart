@@ -3,6 +3,7 @@ import 'package:flutter/material.dart';
 import '../theme/app_colors.dart';
 import 'home_screen.dart';
 import 'login_screen.dart';
+import 'maintenance_home_screen.dart';
 import 'portal_client.dart';
 
 /// Session gate for direct-URL access to the employee portal
@@ -17,6 +18,7 @@ class PortalGateScreen extends StatefulWidget {
 class _PortalGateScreenState extends State<PortalGateScreen> {
   bool _checking = true;
   bool _isEmployee = false;
+  bool _isMaintenance = false;
 
   @override
   void initState() {
@@ -29,6 +31,9 @@ class _PortalGateScreenState extends State<PortalGateScreen> {
     try {
       final session = portalClient.auth.currentSession;
       if (session != null) {
+        _isMaintenance = session.user.userMetadata?['role'] == 'maintenance';
+      }
+      if (session != null && !_isMaintenance) {
         final data = await portalClient
             .from('employee_profiles')
             .select('id')
@@ -56,7 +61,11 @@ class _PortalGateScreenState extends State<PortalGateScreen> {
     }
     return Directionality(
       textDirection: TextDirection.rtl,
-      child: _isEmployee ? const PortalHomeScreen() : const PortalLoginScreen(),
+      child: _isMaintenance
+          ? const MaintenanceHomeScreen()
+          : _isEmployee
+              ? const PortalHomeScreen()
+              : const PortalLoginScreen(),
     );
   }
 }
