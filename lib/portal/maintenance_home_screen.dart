@@ -749,6 +749,34 @@ class _PpmTabState extends State<_PpmTab> {
                                 padding: const EdgeInsets.only(top: 8),
                                 child: _visitReportImage(key),
                               ),
+                            for (final key in _reportKeysOfVisit(h))
+                              Align(
+                                alignment: AlignmentDirectional.centerEnd,
+                                child: TextButton.icon(
+                                  onPressed: () async {
+                                    final ok = await showDialog<bool>(
+                                      context: ctx,
+                                      builder: (c) => AlertDialog(
+                                        backgroundColor: _card,
+                                        title: Text(tr(widget.isEnglish, 'حذف الصورة'), style: const TextStyle(color: Colors.white)),
+                                        content: Text(tr(widget.isEnglish, 'هل تريد حذف صورة التقرير نهائياً؟'),
+                                            style: const TextStyle(color: Colors.white70)),
+                                        actions: [
+                                          TextButton(onPressed: () => Navigator.pop(c, false), child: Text(tr(widget.isEnglish, 'إلغاء'))),
+                                          TextButton(onPressed: () => Navigator.pop(c, true), child: Text(tr(widget.isEnglish, 'حذف'), style: const TextStyle(color: _red))),
+                                        ],
+                                      ),
+                                    );
+                                    if (ok != true) return;
+                                    await removePpmReportImage(logId: h['id'] as String, key: key);
+                                    if (!ctx.mounted) return;
+                                    Navigator.pop(ctx);
+                                    await _showHistory(device);
+                                  },
+                                  icon: const Icon(Icons.delete_outline, size: 16, color: _red),
+                                  label: Text(tr(widget.isEnglish, 'حذف الصورة'), style: const TextStyle(color: _red)),
+                                ),
+                              ),
                           ],
                         ),
                       );
@@ -858,12 +886,23 @@ class _PpmTabState extends State<_PpmTab> {
                 ),
         ),
         actions: [
-          if (logs.isNotEmpty)
-            TextButton.icon(
-              onPressed: () => exportPpmReportPdf(title: 'تقرير الصيانة', logs: logs, devicesById: devicesById),
-              icon: const Icon(Icons.picture_as_pdf_outlined, size: 16, color: _indigo),
-              label: Text(tr(widget.isEnglish, 'تصدير PDF'), style: const TextStyle(color: _indigo)),
+          if (logs.isNotEmpty) ...[
+            TextButton(
+              onPressed: () => exportPpmReportPdf(
+                title: 'تقرير الصيانة', logs: logs, devicesById: devicesById, attachments: PpmPdfAttachments.all),
+              child: Text(tr(widget.isEnglish, 'PDF الكل'), style: const TextStyle(color: _indigo)),
             ),
+            TextButton(
+              onPressed: () => exportPpmReportPdf(
+                title: 'تقرير الصيانة بمرفقات', logs: logs, devicesById: devicesById, attachments: PpmPdfAttachments.withAttachments),
+              child: Text(tr(widget.isEnglish, 'PDF بمرفقات'), style: const TextStyle(color: _indigo)),
+            ),
+            TextButton(
+              onPressed: () => exportPpmReportPdf(
+                title: 'تقرير الصيانة بدون مرفقات', logs: logs, devicesById: devicesById, attachments: PpmPdfAttachments.withoutAttachments),
+              child: Text(tr(widget.isEnglish, 'PDF بدون مرفقات'), style: const TextStyle(color: _indigo)),
+            ),
+          ],
           TextButton(onPressed: () => Navigator.pop(ctx), child: Text(tr(widget.isEnglish, 'إغلاق'))),
         ],
       ),

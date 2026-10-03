@@ -57,6 +57,16 @@ Future<String> uploadPpmReport({required String logId, required PickedPpmReport 
   return key;
 }
 
+Future<void> removePpmReportImage({required String logId, required String key}) async {
+  await portalClient.functions.invoke(
+    'ppm-report',
+    body: {
+      'action': 'removeReportImage',
+      'payload': {'logId': logId, 'key': key},
+    },
+  );
+}
+
 Future<String> ppmReportViewUrl(String key) async {
   final res = await portalClient.functions.invoke(
     'ppm-report',

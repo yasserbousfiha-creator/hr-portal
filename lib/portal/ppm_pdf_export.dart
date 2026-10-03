@@ -1,24 +1,20 @@
-// PDF export for the portal's PPM reports — requested 2026-10-01 ("اصدرها
-// pdf مثل الديسكتوب... بنفس اللوغو... بالعربية يكون من اليمين لليسار،
-// اسم الجهاز أول شيء"). Mirrors hrmanager's generateAndPrintPpmReport as
-// closely as practical: same logo, same RTL table approach, same column
-// order — but uses the `printing` package's actual web API
-// (Printing.sharePdf, a browser download) instead of hrmanager's
-// desktop-only layoutPdf, which saves to disk and shells out to the OS's
-// PDF viewer — neither exists in a browser.
+// PDF export for the portal's PPM reports, laid out like hrmanager's desktop
+// report: same logo, same RTL table approach, and each visit that has report
+// images gets its own A4 page (device details on top, the image below). Visits
+// without images are grouped into one continuous table. Uses the `printing`
+// package's browser download (Printing.sharePdf).
 //
-// IMPORTANT: `pw.TableHelper.fromTextArray` (tried first) does NOT respect
-// the ambient RTL `textDirection` the way a hand-built `pw.Table`/`pw.Row`
-// does in this package — it always renders columns left-to-right
-// regardless of document direction, which put "الجهاز" last instead of
-// first. hrmanager's own PDF code works around this the same way: build
-// the table manually with pw.Table/pw.TableRow. pw.Table lays out its
-// children left-to-right as authored, so cells are listed last-to-first
-// (device name last = rightmost on the page).
+// pw.Table lays its children out left-to-right as authored regardless of text
+// direction, so cells are listed last-to-first (device name last = rightmost).
 import 'package:flutter/services.dart' show rootBundle;
+import 'package:http/http.dart' as http;
 import 'package:pdf/pdf.dart';
 import 'package:pdf/widgets.dart' as pw;
 import 'package:printing/printing.dart';
+
+import 'ppm_report.dart';
+
+enum PpmPdfAttachments { all, withAttachments, withoutAttachments }
 
 pw.Font? _tajawalRegular;
 pw.Font? _tajawalBold;
@@ -57,6 +53,16 @@ String _fmtDateTime(String? iso) {
       '${d.hour.toString().padLeft(2, '0')}:${d.minute.toString().padLeft(2, '0')}';
 }
 
+String? _nonEmpty(Object? v) => v is String && v.isNotEmpty ? v : null;
+
+List<String> _reportKeysOf(Map<String, dynamic> h) {
+  final keys = <String>{
+    ...((h['report_keys'] as List?) ?? const []).map((k) => k.toString()),
+    if (_nonEmpty(h['report_key']) != null) h['report_key'] as String,
+  };
+  return keys.where((k) => k.isNotEmpty).toList();
+}
+
 pw.Widget _cell(pw.Font bold, String text, {bool hdr = false}) => pw.Padding(
       padding: const pw.EdgeInsets.symmetric(horizontal: 8, vertical: 6),
       child: pw.Text(
@@ -74,13 +80,129 @@ Future<void> exportPpmReportPdf({
   required String title,
   required List<Map<String, dynamic>> logs,
   required Map<String, Map<String, dynamic>> devicesById,
+  PpmPdfAttachments attachments = PpmPdfAttachments.all,
 }) async {
+  final entries = switch (attachments) {
+    PpmPdfAttachments.all => logs,
+    PpmPdfAttachments.withAttachments => logs.where((h) => _reportKeysOf(h).isNotEmpty).toList(),
+    PpmPdfAttachments.withoutAttachments => logs.where((h) => _reportKeysOf(h).isEmpty).toList(),
+  };
+
   final regular = await _loadRegular();
   final bold = await _loadBold();
   final logo = await _loadLogo();
-  final pdf = pw.Document(theme: pw.ThemeData.withFont(base: regular, bold: bold));
 
+  final imagesByLog = <Object?, List<pw.MemoryImage>>{};
+  for (final h in entries) {
+    for (final key in _reportKeysOf(h)) {
+      final resp = await http.get(Uri.parse(await ppmReportViewUrl(key)));
+      if (resp.statusCode == 200) {
+        imagesByLog.putIfAbsent(h['id'], () => []).add(pw.MemoryImage(resp.bodyBytes));
+      }
+    }
+  }
+
+  final pdf = pw.Document(theme: pw.ThemeData.withFont(base: regular, bold: bold));
   final now = DateTime.now();
+
+  String detailLine(Map<String, dynamic> d) => [
+        if (_nonEmpty(d['manufacturer']) != null) 'الشركة المصنعة: ${d['manufacturer']}',
+        if (_nonEmpty(d['model_version']) != null) 'الموديل: ${d['model_version']}',
+        if (_nonEmpty(d['serial_number']) != null) 'الرقم التسلسلي: ${d['serial_number']}',
+        if (_nonEmpty(d['location']) != null) 'القسم: ${d['location']}',
+      ].join('   •   ');
+
+  pw.Widget tableOf(List<Map<String, dynamic>> rows) => pw.Table(
+        border: pw.TableBorder.all(color: PdfColors.grey200),
+        columnWidths: const {
+          0: pw.FlexColumnWidth(2.3),
+          1: pw.FlexColumnWidth(1.6),
+          2: pw.FlexColumnWidth(1.1),
+          3: pw.FlexColumnWidth(1.6),
+          4: pw.FlexColumnWidth(2.2),
+        },
+        children: [
+          pw.TableRow(
+            decoration: const pw.BoxDecoration(color: PdfColors.indigo700),
+            children: [
+              _cell(bold, 'ملاحظات', hdr: true),
+              _cell(bold, 'الفني/المسؤول', hdr: true),
+              _cell(bold, 'النوع', hdr: true),
+              _cell(bold, 'التاريخ', hdr: true),
+              _cell(bold, 'الجهاز', hdr: true),
+            ],
+          ),
+          ...rows.asMap().entries.map((entry) {
+            final h = entry.value;
+            final device = devicesById[h['device_id']];
+            return pw.TableRow(
+              decoration: pw.BoxDecoration(
+                color: entry.key.isEven ? const PdfColor.fromInt(0xFFF8FAFC) : PdfColors.white,
+              ),
+              children: [
+                _cell(bold, (h['notes'] as String?)?.isNotEmpty == true ? h['notes'] as String : '—'),
+                _cell(bold, (h['technician'] as String?) ?? '—'),
+                _cell(bold, h['type'] == 'طارئة' ? 'طارئة' : 'دورية'),
+                _cell(bold, _fmtDateTime(h['performed_at'] as String?)),
+                _cell(bold, device?['name'] as String? ?? 'جهاز محذوف'),
+              ],
+            );
+          }),
+        ],
+      );
+
+  pw.Widget visitPage(Map<String, dynamic> h, pw.MemoryImage img) {
+    final device = devicesById[h['device_id']] ?? const <String, dynamic>{};
+    final details = detailLine(device);
+    final notes = _nonEmpty(h['notes']);
+    final tech = _nonEmpty(h['technician']);
+    return pw.SizedBox(
+      height: 600,
+      child: pw.Column(
+        crossAxisAlignment: pw.CrossAxisAlignment.start,
+        children: [
+          pw.Text(device['name'] as String? ?? 'جهاز محذوف', style: pw.TextStyle(font: bold, fontSize: 14)),
+          if (details.isNotEmpty) ...[
+            pw.SizedBox(height: 3),
+            pw.Text(details, style: const pw.TextStyle(fontSize: 9.5, color: PdfColors.grey700)),
+          ],
+          pw.SizedBox(height: 4),
+          pw.Text(
+            'التاريخ: ${_fmtDateTime(h['performed_at'] as String?)}   •   '
+            'النوع: ${h['type'] == 'طارئة' ? 'طارئة' : 'دورية'}   •   '
+            'الفني: ${tech ?? '—'}',
+            style: const pw.TextStyle(fontSize: 9.5),
+          ),
+          if (notes != null) pw.Text('ملاحظات: $notes', style: const pw.TextStyle(fontSize: 9.5)),
+          pw.SizedBox(height: 10),
+          pw.Expanded(child: pw.Center(child: pw.Image(img, fit: pw.BoxFit.contain))),
+        ],
+      ),
+    );
+  }
+
+  final body = <pw.Widget>[];
+  if (entries.isEmpty) {
+    body.add(pw.Text('لا يوجد سجل صيانة بعد', style: const pw.TextStyle(fontSize: 11)));
+  } else {
+    final pending = <Map<String, dynamic>>[];
+    for (final h in entries) {
+      final images = imagesByLog[h['id']] ?? const <pw.MemoryImage>[];
+      if (images.isEmpty) {
+        pending.add(h);
+        continue;
+      }
+      if (pending.isNotEmpty) {
+        body.add(tableOf(List.of(pending)));
+        pending.clear();
+      }
+      for (final img in images) {
+        body.add(pw.NewPage());
+        body.add(visitPage(h, img));
+      }
+    }
+    if (pending.isNotEmpty) body.add(tableOf(List.of(pending)));
+  }
 
   pdf.addPage(
     pw.MultiPage(
@@ -108,50 +230,7 @@ Future<void> exportPpmReportPdf({
         pw.Divider(color: PdfColors.indigo800, thickness: 2),
         pw.SizedBox(height: 10),
       ]),
-      build: (_) => [
-        if (logs.isEmpty)
-          pw.Text('لا يوجد سجل صيانة بعد', style: const pw.TextStyle(fontSize: 11))
-        else
-          pw.Table(
-            border: pw.TableBorder.all(color: PdfColors.grey200),
-            columnWidths: const {
-              0: pw.FlexColumnWidth(2.3),
-              1: pw.FlexColumnWidth(1.6),
-              2: pw.FlexColumnWidth(1.1),
-              3: pw.FlexColumnWidth(1.6),
-              4: pw.FlexColumnWidth(2.2),
-            },
-            children: [
-              pw.TableRow(
-                decoration: const pw.BoxDecoration(color: PdfColors.indigo700),
-                children: [
-                  _cell(bold, 'ملاحظات', hdr: true),
-                  _cell(bold, 'الفني/المسؤول', hdr: true),
-                  _cell(bold, 'النوع', hdr: true),
-                  _cell(bold, 'التاريخ', hdr: true),
-                  _cell(bold, 'الجهاز', hdr: true),
-                ],
-              ),
-              ...logs.asMap().entries.map((entry) {
-                final i = entry.key;
-                final h = entry.value;
-                final device = devicesById[h['device_id']];
-                return pw.TableRow(
-                  decoration: pw.BoxDecoration(
-                    color: i.isEven ? const PdfColor.fromInt(0xFFF8FAFC) : PdfColors.white,
-                  ),
-                  children: [
-                    _cell(bold, (h['notes'] as String?)?.isNotEmpty == true ? h['notes'] as String : '—'),
-                    _cell(bold, (h['technician'] as String?) ?? '—'),
-                    _cell(bold, h['type'] == 'طارئة' ? 'طارئة' : 'دورية'),
-                    _cell(bold, _fmtDateTime(h['performed_at'] as String?)),
-                    _cell(bold, device?['name'] as String? ?? 'جهاز محذوف'),
-                  ],
-                );
-              }),
-            ],
-          ),
-      ],
+      build: (_) => body,
     ),
   );
 
