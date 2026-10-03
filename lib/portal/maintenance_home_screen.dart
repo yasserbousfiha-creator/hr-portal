@@ -8,7 +8,9 @@ import 'package:flutter/material.dart';
 import 'portal_client.dart';
 import 'login_screen.dart';
 import 'portal_i18n.dart';
+import 'package:url_launcher/url_launcher.dart';
 import 'ppm_pdf_export.dart';
+import 'ppm_report.dart';
 
 class MaintenanceHomeScreen extends StatefulWidget {
   const MaintenanceHomeScreen({super.key});
@@ -165,6 +167,7 @@ class _PpmTabState extends State<_PpmTab> {
     DateTime performedAt = DateTime.now();
     final notesCtrl = TextEditingController();
     final technicianName = _currentTechName() ?? '';
+    PickedPpmReport? report;
     String deviceQuery = '';
 
     final saved = await showDialog<bool>(
@@ -241,6 +244,7 @@ class _PpmTabState extends State<_PpmTab> {
                   child: Text(technicianName, style: const TextStyle(color: Colors.white)),
                 ),
                 const SizedBox(height: 12),
+                _reportPicker(report, (r) => setSt(() => report = r)),
                 TextField(controller: notesCtrl, style: const TextStyle(color: Colors.white), decoration: _dec(tr(widget.isEnglish, 'ملاحظات (اختياري)'))),
               ]),
             ),
@@ -258,8 +262,11 @@ class _PpmTabState extends State<_PpmTab> {
     if (saved != true || selectedDevice == null) return;
     try {
       final now = performedAt;
+      final logId = '${now.millisecondsSinceEpoch}_${selectedDevice!['id']}';
+      final reportKey = report == null ? null : await uploadPpmReport(logId: logId, report: report!);
       await portalClient.from('ppm_maintenance_log').insert({
-        'id': '${now.millisecondsSinceEpoch}_${selectedDevice!['id']}',
+        'id': logId,
+        'report_key': reportKey,
         'device_id': selectedDevice!['id'],
         'performed_at': now.toIso8601String(),
         'next_due_date': selectedDevice!['next_due_date'],
@@ -405,9 +412,37 @@ class _PpmTabState extends State<_PpmTab> {
     } catch (_) {}
   }
 
+  Widget _reportPicker(PickedPpmReport? report, void Function(PickedPpmReport?) onChanged) {
+    return ListTile(
+      contentPadding: EdgeInsets.zero,
+      title: Text(tr(widget.isEnglish, 'صورة تقرير الصيانة (اختياري)'),
+          style: const TextStyle(color: Colors.white70, fontSize: 13)),
+      subtitle: Text(report?.name ?? tr(widget.isEnglish, 'لم يُرفق تقرير'),
+          style: const TextStyle(color: Colors.white54, fontSize: 12)),
+      trailing: Row(
+        mainAxisSize: MainAxisSize.min,
+        children: [
+          IconButton(
+            icon: const Icon(Icons.upload_file, color: _indigo, size: 18),
+            onPressed: () async {
+              final picked = await pickPpmReport();
+              if (picked != null) onChanged(picked);
+            },
+          ),
+          if (report != null)
+            IconButton(
+              icon: const Icon(Icons.close, color: Colors.white54, size: 18),
+              onPressed: () => onChanged(null),
+            ),
+        ],
+      ),
+    );
+  }
+
   Future<void> _logMaintenance(Map<String, dynamic> device) async {
     bool isEmergency = false;
     final notesCtrl = TextEditingController();
+    PickedPpmReport? report;
     final confirmed = await showDialog<bool>(
       context: context,
       builder: (ctx) => StatefulBuilder(
@@ -427,6 +462,7 @@ class _PpmTabState extends State<_PpmTab> {
                 controlAffinity: ListTileControlAffinity.leading,
                 activeColor: _indigo,
               ),
+              _reportPicker(report, (r) => setSt(() => report = r)),
               TextField(controller: notesCtrl, style: const TextStyle(color: Colors.white), decoration: _dec(tr(widget.isEnglish, 'ملاحظات (اختياري)'))),
             ]),
           ),
@@ -447,8 +483,11 @@ class _PpmTabState extends State<_PpmTab> {
       } else {
         nextDue = _addMonths(now, intervalMonths).toIso8601String();
       }
+      final logId = '${now.millisecondsSinceEpoch}_${device['id']}';
+      final reportKey = report == null ? null : await uploadPpmReport(logId: logId, report: report!);
       await portalClient.from('ppm_maintenance_log').insert({
-        'id': '${now.millisecondsSinceEpoch}_${device['id']}',
+        'id': logId,
+        'report_key': reportKey,
         'device_id': device['id'],
         'performed_at': now.toIso8601String(),
         'next_due_date': nextDue,
@@ -609,6 +648,22 @@ class _PpmTabState extends State<_PpmTab> {
                                 if ((h['technician'] as String?)?.isNotEmpty ?? false)
                                   Text(h['technician'] as String, style: const TextStyle(color: Colors.white54, fontSize: 11)),
                                 const SizedBox(width: 6),
+                                if (((h['report_key'] as String?) ?? '').isNotEmpty) ...[
+                                  InkWell(
+                                    onTap: () async {
+                                      final url = await ppmReportViewUrl(h['report_key'] as String);
+                                      await launchUrl(Uri.parse(url), mode: LaunchMode.externalApplication);
+                                    },
+                                    child: Tooltip(
+                                      message: tr(widget.isEnglish, 'عرض تقرير الصيانة'),
+                                      child: const Padding(
+                                        padding: EdgeInsets.all(4),
+                                        child: Icon(Icons.attach_file, size: 14, color: _indigo),
+                                      ),
+                                    ),
+                                  ),
+                                  const SizedBox(width: 6),
+                                ],
                                 InkWell(
                                   onTap: () => _editLogEntry(h, () async {
                                     final fresh = await portalClient
