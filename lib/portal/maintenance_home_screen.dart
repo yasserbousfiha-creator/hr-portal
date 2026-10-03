@@ -718,6 +718,20 @@ class _PpmTabState extends State<_PpmTab> {
                                   const SizedBox(width: 6),
                                 ],
                                 InkWell(
+                                  onTap: () async {
+                                    Navigator.pop(ctx);
+                                    await _attachReportToVisit(h, device);
+                                  },
+                                  child: Tooltip(
+                                    message: tr(widget.isEnglish, 'إرفاق صورة تقرير'),
+                                    child: const Padding(
+                                      padding: EdgeInsets.all(4),
+                                      child: Icon(Icons.add_a_photo_outlined, size: 14, color: _indigo),
+                                    ),
+                                  ),
+                                ),
+                                const SizedBox(width: 6),
+                                InkWell(
                                   onTap: () => _editLogEntry(h, () async {
                                     final fresh = await portalClient
                                         .from('ppm_maintenance_log')
@@ -991,94 +1005,61 @@ class _PpmTabState extends State<_PpmTab> {
     );
   }
 
-  Future<void> _showVisitDetails(Map<String, dynamic> h, Map<String, dynamic>? device) async {
-    final keys = <String>{
-      ...((h['report_keys'] as List?) ?? const []).map((k) => k.toString()),
-      if (((h['report_key'] as String?) ?? '').isNotEmpty) h['report_key'] as String,
-    }.toList();
-    final detailRows = <(String, String?)>[
-      (tr(widget.isEnglish, 'الشركة المصنعة'), device?['manufacturer'] as String?),
-      (tr(widget.isEnglish, 'الموديل/الإصدار'), device?['model_version'] as String?),
-      (tr(widget.isEnglish, 'الرقم التسلسلي'), device?['serial_number'] as String?),
-      (tr(widget.isEnglish, 'القسم'), device?['location'] as String?),
-      (tr(widget.isEnglish, 'تاريخ الصيانة'), _fmtDateTime(h['performed_at'] as String?)),
-      (tr(widget.isEnglish, 'النوع'), h['type'] as String?),
-      (tr(widget.isEnglish, 'الفني/المسؤول'), h['technician'] as String?),
-      (tr(widget.isEnglish, 'ملاحظات'), h['notes'] as String?),
-    ];
-    await showDialog<void>(
+  Future<void> _attachReportToVisit(Map<String, dynamic> h, Map<String, dynamic> device) async {
+    final picked = await pickPpmReport();
+    if (picked == null) return;
+    final keys = _reportKeysOfVisit(h);
+    final logId = h['id'] as String;
+    final key = await uploadPpmReport(logId: logId, report: picked, index: keys.length + 1);
+    final newKeys = [...keys, key];
+    await portalClient
+        .from('ppm_maintenance_log')
+        .update({'report_keys': newKeys, 'report_key': newKeys.first})
+        .eq('id', logId);
+    if (!mounted) return;
+    await _showHistory(device);
+  }
+
+  Future<void> _bulkLogAll() async {
+    if (_devices.isEmpty) return;
+    final ok = await showDialog<bool>(
       context: context,
       builder: (ctx) => AlertDialog(
         backgroundColor: _card,
-        title: Text(device?['name'] as String? ?? tr(widget.isEnglish, 'جهاز محذوف'),
-            style: const TextStyle(color: Colors.white)),
-        content: SizedBox(
-          width: 420,
-          child: SingleChildScrollView(
-            child: Column(
-              mainAxisSize: MainAxisSize.min,
-              crossAxisAlignment: CrossAxisAlignment.start,
-              children: [
-                for (final r in detailRows)
-                  if ((r.$2 ?? '').isNotEmpty)
-                    Padding(
-                      padding: const EdgeInsets.only(bottom: 6),
-                      child: Text('${r.$1}: ${r.$2}', style: const TextStyle(color: Colors.white70, fontSize: 13)),
-                    ),
-                if (device != null) ...[
-                  const SizedBox(height: 10),
-                  FilledButton(
-                    onPressed: () async {
-                      Navigator.pop(ctx);
-                      await _logMaintenance(device);
-                    },
-                    child: Text(tr(widget.isEnglish, 'تسجيل صيانة وإرفاق صورة')),
-                  ),
-                ],
-                const SizedBox(height: 10),
-                OutlinedButton.icon(
-                  onPressed: () async {
-                    final picked = await pickPpmReport();
-                    if (picked == null) return;
-                    final logId = h['id'] as String;
-                    final key = await uploadPpmReport(logId: logId, report: picked, index: keys.length + 1);
-                    final newKeys = [...keys, key];
-                    await portalClient
-                        .from('ppm_maintenance_log')
-                        .update({'report_keys': newKeys, 'report_key': newKeys.first})
-                        .eq('id', logId);
-                    if (!ctx.mounted) return;
-                    Navigator.pop(ctx);
-                    if (!mounted) return;
-                    await _showVisitDetails({...h, 'report_keys': newKeys, 'report_key': newKeys.first}, device);
-                  },
-                  icon: const Icon(Icons.attach_file, size: 16, color: _indigo),
-                  label: Text(tr(widget.isEnglish, 'إرفاق صورة تقرير'), style: const TextStyle(color: _indigo)),
-                ),
-                for (final k in keys) ...[
-                  const SizedBox(height: 10),
-                  FutureBuilder<String>(
-                    future: ppmReportViewUrl(k),
-                    builder: (context, snap) {
-                      if (!snap.hasData) {
-                        return const SizedBox(height: 120, child: Center(child: CircularProgressIndicator(color: _indigo)));
-                      }
-                      return ClipRRect(
-                        borderRadius: BorderRadius.circular(8),
-                        child: Image.network(snap.data!, fit: BoxFit.contain),
-                      );
-                    },
-                  ),
-                ],
-              ],
-            ),
-          ),
+        title: Text(tr(widget.isEnglish, 'تسجيل صيانة لكل الأجهزة'), style: const TextStyle(color: Colors.white)),
+        content: Text(
+          '${tr(widget.isEnglish, 'سيتم تسجيل صيانة اليوم لعدد')} ${_devices.length} ${tr(widget.isEnglish, 'جهاز، وتحديث موعد الصيانة القادمة لكل واحد منها حسب دوريته. متابعة؟')}',
+          style: const TextStyle(color: Colors.white70),
         ),
         actions: [
-          TextButton(onPressed: () => Navigator.pop(ctx), child: Text(tr(widget.isEnglish, 'إغلاق'))),
+          TextButton(onPressed: () => Navigator.pop(ctx, false), child: Text(tr(widget.isEnglish, 'إلغاء'))),
+          FilledButton(onPressed: () => Navigator.pop(ctx, true), child: Text(tr(widget.isEnglish, 'تسجيل للكل'))),
         ],
       ),
     );
+    if (ok != true) return;
+    final now = DateTime.now();
+    final tech = _currentTechName();
+    for (final d in _devices) {
+      try {
+        final nextDue = _addMonths(now, d['interval_months'] as int? ?? 3).toIso8601String();
+        await portalClient.from('ppm_maintenance_log').insert({
+          'id': '${now.millisecondsSinceEpoch}_${d['id']}',
+          'device_id': d['id'],
+          'performed_at': now.toIso8601String(),
+          'next_due_date': nextDue,
+          'type': 'دورية',
+          'technician': tech,
+          'created_at': now.toIso8601String(),
+        });
+        await portalClient.from('ppm_devices').update({
+          'last_maintenance_date': now.toIso8601String(),
+          'next_due_date': nextDue,
+          'last_maintenance_by': tech,
+        }).eq('id', d['id']);
+      } catch (_) {}
+    }
+    await _load();
   }
 
   Future<void> _delete(Map<String, dynamic> d) async {
@@ -1124,6 +1105,12 @@ class _PpmTabState extends State<_PpmTab> {
                     if (v) _loadRecent();
                   },
                 ),
+                if (_devices.isNotEmpty)
+                  TextButton.icon(
+                    onPressed: _bulkLogAll,
+                    icon: const Icon(Icons.done_all, size: 16, color: _indigo),
+                    label: Text(tr(widget.isEnglish, 'تسجيل لكل الأجهزة'), style: const TextStyle(color: _indigo)),
+                  ),
                 if (_recentOnly && _recentLogs.isNotEmpty)
                   TextButton.icon(
                     onPressed: () => exportPpmReportPdf(
