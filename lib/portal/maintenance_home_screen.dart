@@ -927,17 +927,23 @@ class _PpmTabState extends State<_PpmTab> {
       );
     }
     final byId = {for (final d in _devices) d['id'] as String: d};
+    final grouped = <String, List<Map<String, dynamic>>>{};
+    for (final h in _recentLogs) {
+      grouped.putIfAbsent(h['device_id'] as String, () => []).add(h);
+    }
+    final groups = grouped.entries.toList();
     return ListView.builder(
       padding: const EdgeInsets.all(16),
-      itemCount: _recentLogs.length,
+      itemCount: groups.length,
       itemBuilder: (context, i) {
-        final h = _recentLogs[i];
-        final device = byId[h['device_id'] as String];
-        final isEmergency = h['type'] == 'طارئة';
-        final tech = (h['technician'] as String?) ?? '';
+        final device = byId[groups[i].key];
+        final visits = groups[i].value;
+        final last = visits.first;
+        final emergencies = visits.where((v) => v['type'] == 'طارئة').length;
+        final tech = (last['technician'] as String?) ?? '';
         return _cardTile(
           child: InkWell(
-            onTap: () => device != null ? _showHistory(device) : _showVisitDetails(h, device),
+            onTap: device == null ? null : () => _showHistory(device),
             child: Row(
               children: [
                 Expanded(
@@ -950,19 +956,32 @@ class _PpmTabState extends State<_PpmTab> {
                       ),
                       const SizedBox(height: 2),
                       Text(
-                        '${_fmtDateTime(h['performed_at'] as String?)}${tech.isEmpty ? '' : '   •   $tech'}',
+                        '${tr(widget.isEnglish, 'آخر صيانة')}: ${_fmtDateTime(last['performed_at'] as String?)}'
+                        '${tech.isEmpty ? '' : '   •   $tech'}',
                         style: const TextStyle(color: Colors.white54, fontSize: 12),
                       ),
                     ],
                   ),
                 ),
-                if (isEmergency)
+                if (emergencies > 0)
                   Container(
                     margin: const EdgeInsets.only(left: 6),
                     padding: const EdgeInsets.symmetric(horizontal: 7, vertical: 2),
                     decoration: BoxDecoration(color: _amber.withValues(alpha: 0.15), borderRadius: BorderRadius.circular(20)),
-                    child: Text(tr(widget.isEnglish, 'طارئة'), style: const TextStyle(color: _amber, fontSize: 9.5, fontWeight: FontWeight.w700)),
+                    child: Text(
+                      '${tr(widget.isEnglish, 'طارئة')} ($emergencies)',
+                      style: const TextStyle(color: _amber, fontSize: 9.5, fontWeight: FontWeight.w700),
+                    ),
                   ),
+                Container(
+                  margin: const EdgeInsets.only(left: 6),
+                  padding: const EdgeInsets.symmetric(horizontal: 7, vertical: 2),
+                  decoration: BoxDecoration(color: _indigo.withValues(alpha: 0.15), borderRadius: BorderRadius.circular(20)),
+                  child: Text(
+                    '${tr(widget.isEnglish, 'عدد الصيانات')}: ${visits.length}',
+                    style: const TextStyle(color: _indigo, fontSize: 9.5, fontWeight: FontWeight.w700),
+                  ),
+                ),
                 const Icon(Icons.chevron_left, color: Colors.white38),
               ],
             ),
