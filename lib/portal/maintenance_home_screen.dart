@@ -592,6 +592,52 @@ class _PpmTabState extends State<_PpmTab> {
     } catch (_) {}
   }
 
+  List<String> _reportKeysOfVisit(Map<String, dynamic> h) {
+    final keys = <String>{
+      ...((h['report_keys'] as List?) ?? const []).map((k) => k.toString()),
+      if (((h['report_key'] as String?) ?? '').isNotEmpty) h['report_key'] as String,
+    };
+    return keys.where((k) => k.isNotEmpty).toList();
+  }
+
+  Widget _visitReportImage(String key) {
+    return FutureBuilder<String>(
+      future: ppmReportViewUrl(key),
+      builder: (context, snap) {
+        if (!snap.hasData) {
+          return const SizedBox(height: 120, child: Center(child: CircularProgressIndicator(color: _indigo)));
+        }
+        return ClipRRect(
+          borderRadius: BorderRadius.circular(8),
+          child: Image.network(snap.data!, fit: BoxFit.contain),
+        );
+      },
+    );
+  }
+
+  List<Widget> _deviceInfoWidgets(Map<String, dynamic> device) {
+    final rows = <(String, String?)>[
+      (tr(widget.isEnglish, 'الشركة المصنعة'), device['manufacturer'] as String?),
+      (tr(widget.isEnglish, 'الموديل/الإصدار'), device['model_version'] as String?),
+      (tr(widget.isEnglish, 'الرقم التسلسلي'), device['serial_number'] as String?),
+      (tr(widget.isEnglish, 'القسم'), device['location'] as String?),
+      (tr(widget.isEnglish, 'دورية الصيانة'), device['interval_months'] == null ? null : '${device['interval_months']} ${tr(widget.isEnglish, 'أشهر')}'),
+      (tr(widget.isEnglish, 'آخر صيانة'), _fmtDateTime(device['last_maintenance_date'] as String?)),
+      (tr(widget.isEnglish, 'آخر فني'), device['last_maintenance_by'] as String?),
+      (tr(widget.isEnglish, 'الصيانة القادمة'), _fmt(device['next_due_date'] as String?)),
+      (tr(widget.isEnglish, 'أضيف بواسطة'), device['added_by'] as String?),
+    ];
+    return [
+      for (final r in rows)
+        if ((r.$2 ?? '').isNotEmpty)
+          Padding(
+            padding: const EdgeInsets.only(bottom: 4),
+            child: Text('${r.$1}: ${r.$2}', style: const TextStyle(color: Colors.white70, fontSize: 12.5)),
+          ),
+      const Padding(padding: EdgeInsets.symmetric(vertical: 8), child: Divider(color: Colors.white12)),
+    ];
+  }
+
   Future<void> _showHistory(Map<String, dynamic> device) async {
     List<Map<String, dynamic>> history = [];
     try {
@@ -619,7 +665,9 @@ class _PpmTabState extends State<_PpmTab> {
                 )
               : SingleChildScrollView(
                   child: Column(
-                    children: history.map((h) {
+                    children: [
+                      ..._deviceInfoWidgets(device),
+                      ...history.map((h) {
                       final next = DateTime.tryParse(h['next_due_date'] as String? ?? '');
                       final isEmergency = h['type'] == 'طارئة';
                       return Container(
@@ -696,10 +744,16 @@ class _PpmTabState extends State<_PpmTab> {
                                 padding: const EdgeInsets.only(top: 4),
                                 child: Text(h['notes'] as String, style: const TextStyle(color: Colors.white70, fontSize: 12)),
                               ),
+                            for (final key in _reportKeysOfVisit(h))
+                              Padding(
+                                padding: const EdgeInsets.only(top: 8),
+                                child: _visitReportImage(key),
+                              ),
                           ],
                         ),
                       );
-                    }).toList(),
+                    }),
+                    ],
                   ),
                 ),
         ),
@@ -845,7 +899,7 @@ class _PpmTabState extends State<_PpmTab> {
         final tech = (h['technician'] as String?) ?? '';
         return _cardTile(
           child: InkWell(
-            onTap: () => _showVisitDetails(h, device),
+            onTap: () => device != null ? _showHistory(device) : _showVisitDetails(h, device),
             child: Row(
               children: [
                 Expanded(
