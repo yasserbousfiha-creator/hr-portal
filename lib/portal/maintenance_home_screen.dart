@@ -145,6 +145,8 @@ class _PpmTab extends StatefulWidget {
 class _PpmTabState extends State<_PpmTab> {
   bool _loading = true;
   List<Map<String, dynamic>> _devices = [];
+  bool _recentOnly = false;
+  List<Map<String, dynamic>> _recentLogs = [];
 
   // The periodic/emergency split tried as two tabs (2026-10-01) was undone
   // the same day: "نلغي التبويبين، بس نخليها بشكل مرتب كي نفرق بين الدورية
@@ -267,6 +269,7 @@ class _PpmTabState extends State<_PpmTab> {
       await portalClient.from('ppm_maintenance_log').insert({
         'id': logId,
         'report_key': reportKey,
+        'report_keys': reportKey == null ? <String>[] : [reportKey],
         'device_id': selectedDevice!['id'],
         'performed_at': now.toIso8601String(),
         'next_due_date': selectedDevice!['next_due_date'],
@@ -288,6 +291,7 @@ class _PpmTabState extends State<_PpmTab> {
     try {
       final data = await portalClient.from('ppm_devices').select().order('name');
       if (mounted) setState(() { _devices = List<Map<String, dynamic>>.from(data as List); _loading = false; });
+      if (_recentOnly) _loadRecent();
     } catch (_) {
       if (mounted) setState(() => _loading = false);
     }
@@ -488,6 +492,7 @@ class _PpmTabState extends State<_PpmTab> {
       await portalClient.from('ppm_maintenance_log').insert({
         'id': logId,
         'report_key': reportKey,
+        'report_keys': reportKey == null ? <String>[] : [reportKey],
         'device_id': device['id'],
         'performed_at': now.toIso8601String(),
         'next_due_date': nextDue,
@@ -811,6 +816,130 @@ class _PpmTabState extends State<_PpmTab> {
     );
   }
 
+  Future<void> _loadRecent() async {
+    final since = DateTime.now().subtract(const Duration(days: 30)).toIso8601String();
+    try {
+      final data = await portalClient
+          .from('ppm_maintenance_log')
+          .select()
+          .gte('performed_at', since)
+          .order('performed_at', ascending: false);
+      if (mounted) setState(() => _recentLogs = List<Map<String, dynamic>>.from(data as List));
+    } catch (_) {}
+  }
+
+  Widget _buildRecentList() {
+    if (_recentLogs.isEmpty) {
+      return Center(
+        child: Text(tr(widget.isEnglish, 'لا توجد صيانات خلال آخر شهر'), style: const TextStyle(color: Colors.white54)),
+      );
+    }
+    final byId = {for (final d in _devices) d['id'] as String: d};
+    return ListView.builder(
+      padding: const EdgeInsets.all(16),
+      itemCount: _recentLogs.length,
+      itemBuilder: (context, i) {
+        final h = _recentLogs[i];
+        final device = byId[h['device_id'] as String];
+        final isEmergency = h['type'] == 'طارئة';
+        final tech = (h['technician'] as String?) ?? '';
+        return _cardTile(
+          child: InkWell(
+            onTap: () => _showVisitDetails(h, device),
+            child: Row(
+              children: [
+                Expanded(
+                  child: Column(
+                    crossAxisAlignment: CrossAxisAlignment.start,
+                    children: [
+                      Text(
+                        device?['name'] as String? ?? tr(widget.isEnglish, 'جهاز محذوف'),
+                        style: const TextStyle(color: Colors.white, fontWeight: FontWeight.w700, fontSize: 14),
+                      ),
+                      const SizedBox(height: 2),
+                      Text(
+                        '${_fmtDateTime(h['performed_at'] as String?)}${tech.isEmpty ? '' : '   •   $tech'}',
+                        style: const TextStyle(color: Colors.white54, fontSize: 12),
+                      ),
+                    ],
+                  ),
+                ),
+                if (isEmergency)
+                  Container(
+                    margin: const EdgeInsets.only(left: 6),
+                    padding: const EdgeInsets.symmetric(horizontal: 7, vertical: 2),
+                    decoration: BoxDecoration(color: _amber.withValues(alpha: 0.15), borderRadius: BorderRadius.circular(20)),
+                    child: Text(tr(widget.isEnglish, 'طارئة'), style: const TextStyle(color: _amber, fontSize: 9.5, fontWeight: FontWeight.w700)),
+                  ),
+                const Icon(Icons.chevron_left, color: Colors.white38),
+              ],
+            ),
+          ),
+        );
+      },
+    );
+  }
+
+  Future<void> _showVisitDetails(Map<String, dynamic> h, Map<String, dynamic>? device) async {
+    final keys = <String>{
+      ...((h['report_keys'] as List?) ?? const []).map((k) => k.toString()),
+      if (((h['report_key'] as String?) ?? '').isNotEmpty) h['report_key'] as String,
+    }.toList();
+    final detailRows = <(String, String?)>[
+      (tr(widget.isEnglish, 'الشركة المصنعة'), device?['manufacturer'] as String?),
+      (tr(widget.isEnglish, 'الموديل/الإصدار'), device?['model_version'] as String?),
+      (tr(widget.isEnglish, 'الرقم التسلسلي'), device?['serial_number'] as String?),
+      (tr(widget.isEnglish, 'القسم'), device?['location'] as String?),
+      (tr(widget.isEnglish, 'تاريخ الصيانة'), _fmtDateTime(h['performed_at'] as String?)),
+      (tr(widget.isEnglish, 'النوع'), h['type'] as String?),
+      (tr(widget.isEnglish, 'الفني/المسؤول'), h['technician'] as String?),
+      (tr(widget.isEnglish, 'ملاحظات'), h['notes'] as String?),
+    ];
+    await showDialog<void>(
+      context: context,
+      builder: (ctx) => AlertDialog(
+        backgroundColor: _card,
+        title: Text(device?['name'] as String? ?? tr(widget.isEnglish, 'جهاز محذوف'),
+            style: const TextStyle(color: Colors.white)),
+        content: SizedBox(
+          width: 420,
+          child: SingleChildScrollView(
+            child: Column(
+              mainAxisSize: MainAxisSize.min,
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
+                for (final r in detailRows)
+                  if ((r.$2 ?? '').isNotEmpty)
+                    Padding(
+                      padding: const EdgeInsets.only(bottom: 6),
+                      child: Text('${r.$1}: ${r.$2}', style: const TextStyle(color: Colors.white70, fontSize: 13)),
+                    ),
+                for (final k in keys) ...[
+                  const SizedBox(height: 10),
+                  FutureBuilder<String>(
+                    future: ppmReportViewUrl(k),
+                    builder: (context, snap) {
+                      if (!snap.hasData) {
+                        return const SizedBox(height: 120, child: Center(child: CircularProgressIndicator(color: _indigo)));
+                      }
+                      return ClipRRect(
+                        borderRadius: BorderRadius.circular(8),
+                        child: Image.network(snap.data!, fit: BoxFit.contain),
+                      );
+                    },
+                  ),
+                ],
+              ],
+            ),
+          ),
+        ),
+        actions: [
+          TextButton(onPressed: () => Navigator.pop(ctx), child: Text(tr(widget.isEnglish, 'إغلاق'))),
+        ],
+      ),
+    );
+  }
+
   Future<void> _delete(Map<String, dynamic> d) async {
     try {
       await portalClient.from('ppm_devices').delete().eq('id', d['id']);
@@ -843,6 +972,14 @@ class _PpmTabState extends State<_PpmTab> {
                   icon: const Icon(Icons.warning_amber_rounded, size: 16, color: _red),
                   label: Text(tr(widget.isEnglish, 'تسجيل صيانة طارئة'), style: const TextStyle(color: _red)),
                 ),
+                FilterChip(
+                  label: Text(tr(widget.isEnglish, 'آخر الصيانات (30 يوماً)'), style: const TextStyle(fontSize: 12)),
+                  selected: _recentOnly,
+                  onSelected: (v) {
+                    setState(() => _recentOnly = v);
+                    if (v) _loadRecent();
+                  },
+                ),
                 const Spacer(),
                 TextButton.icon(
                   onPressed: _showAllLogs,
@@ -853,7 +990,9 @@ class _PpmTabState extends State<_PpmTab> {
             ),
           ),
           Expanded(
-            child: _devices.isEmpty
+            child: _recentOnly
+                ? _buildRecentList()
+                : _devices.isEmpty
                 ? Center(child: Text(tr(widget.isEnglish, 'لا توجد أجهزة'), style: const TextStyle(color: Colors.white54)))
                 : ListView.builder(
               padding: const EdgeInsets.all(16),
