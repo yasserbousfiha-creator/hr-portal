@@ -34,9 +34,10 @@ Future<PickedPpmReport?> pickPpmReport() async {
 
 /// Uploads straight to R2 through a short-lived presigned URL from the
 /// `ppm-report` function. Returns the storage key to save on the log row.
-Future<String> uploadPpmReport({required String logId, required PickedPpmReport report}) async {
+Future<String> uploadPpmReport({required String logId, required PickedPpmReport report, int index = 1}) async {
   final ext = report.contentType == 'image/png' ? 'png' : 'jpg';
-  final key = 'reports/$logId.$ext';
+  final suffix = index > 1 ? '-$index' : '';
+  final key = 'reports/$logId$suffix.$ext';
   final res = await portalClient.functions.invoke(
     'ppm-report',
     body: {

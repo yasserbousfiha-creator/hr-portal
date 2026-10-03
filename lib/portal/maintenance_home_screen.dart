@@ -924,6 +924,26 @@ class _PpmTabState extends State<_PpmTab> {
                     child: Text(tr(widget.isEnglish, 'تسجيل صيانة وإرفاق صورة')),
                   ),
                 ],
+                const SizedBox(height: 10),
+                OutlinedButton.icon(
+                  onPressed: () async {
+                    final picked = await pickPpmReport();
+                    if (picked == null) return;
+                    final logId = h['id'] as String;
+                    final key = await uploadPpmReport(logId: logId, report: picked, index: keys.length + 1);
+                    final newKeys = [...keys, key];
+                    await portalClient
+                        .from('ppm_maintenance_log')
+                        .update({'report_keys': newKeys, 'report_key': newKeys.first})
+                        .eq('id', logId);
+                    if (!ctx.mounted) return;
+                    Navigator.pop(ctx);
+                    if (!mounted) return;
+                    await _showVisitDetails({...h, 'report_keys': newKeys, 'report_key': newKeys.first}, device);
+                  },
+                  icon: const Icon(Icons.attach_file, size: 16, color: _indigo),
+                  label: Text(tr(widget.isEnglish, 'إرفاق صورة تقرير'), style: const TextStyle(color: _indigo)),
+                ),
                 for (final k in keys) ...[
                   const SizedBox(height: 10),
                   FutureBuilder<String>(
