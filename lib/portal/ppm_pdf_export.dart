@@ -12,10 +12,9 @@
 // does in this package — it always renders columns left-to-right
 // regardless of document direction, which put "الجهاز" last instead of
 // first. hrmanager's own PDF code works around this the same way: build
-// the table manually with pw.Table/pw.TableRow so column order follows
-// the list order, authored first-to-last in reading order (device name
-// first = rightmost in RTL, since pw.Row/pw.Table DO respect
-// Directionality for row/column placement — just not fromTextArray).
+// the table manually with pw.Table/pw.TableRow. pw.Table lays out its
+// children left-to-right as authored, so cells are listed last-to-first
+// (device name last = rightmost on the page).
 import 'package:flutter/services.dart' show rootBundle;
 import 'package:pdf/pdf.dart';
 import 'package:pdf/widgets.dart' as pw;
@@ -116,21 +115,21 @@ Future<void> exportPpmReportPdf({
           pw.Table(
             border: pw.TableBorder.all(color: PdfColors.grey200),
             columnWidths: const {
-              0: pw.FlexColumnWidth(2.2),
+              0: pw.FlexColumnWidth(2.3),
               1: pw.FlexColumnWidth(1.6),
               2: pw.FlexColumnWidth(1.1),
               3: pw.FlexColumnWidth(1.6),
-              4: pw.FlexColumnWidth(2.3),
+              4: pw.FlexColumnWidth(2.2),
             },
             children: [
               pw.TableRow(
                 decoration: const pw.BoxDecoration(color: PdfColors.indigo700),
                 children: [
-                  _cell(bold, 'الجهاز', hdr: true),
-                  _cell(bold, 'التاريخ', hdr: true),
-                  _cell(bold, 'النوع', hdr: true),
-                  _cell(bold, 'الفني/المسؤول', hdr: true),
                   _cell(bold, 'ملاحظات', hdr: true),
+                  _cell(bold, 'الفني/المسؤول', hdr: true),
+                  _cell(bold, 'النوع', hdr: true),
+                  _cell(bold, 'التاريخ', hdr: true),
+                  _cell(bold, 'الجهاز', hdr: true),
                 ],
               ),
               ...logs.asMap().entries.map((entry) {
@@ -142,11 +141,11 @@ Future<void> exportPpmReportPdf({
                     color: i.isEven ? const PdfColor.fromInt(0xFFF8FAFC) : PdfColors.white,
                   ),
                   children: [
-                    _cell(bold, device?['name'] as String? ?? 'جهاز محذوف'),
-                    _cell(bold, _fmtDateTime(h['performed_at'] as String?)),
-                    _cell(bold, h['type'] == 'طارئة' ? 'طارئة' : 'دورية'),
-                    _cell(bold, (h['technician'] as String?) ?? '—'),
                     _cell(bold, (h['notes'] as String?)?.isNotEmpty == true ? h['notes'] as String : '—'),
+                    _cell(bold, (h['technician'] as String?) ?? '—'),
+                    _cell(bold, h['type'] == 'طارئة' ? 'طارئة' : 'دورية'),
+                    _cell(bold, _fmtDateTime(h['performed_at'] as String?)),
+                    _cell(bold, device?['name'] as String? ?? 'جهاز محذوف'),
                   ],
                 );
               }),
