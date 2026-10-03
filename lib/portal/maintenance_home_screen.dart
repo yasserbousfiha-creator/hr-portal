@@ -811,6 +811,10 @@ class _PpmTabState extends State<_PpmTab> {
       logs = List<Map<String, dynamic>>.from(logsData as List);
     } catch (_) {}
     if (!mounted) return;
+    final grouped = <String, List<Map<String, dynamic>>>{};
+    for (final h in logs) {
+      grouped.putIfAbsent(h['device_id'] as String, () => []).add(h);
+    }
     await showDialog<void>(
       context: context,
       builder: (ctx) => AlertDialog(
@@ -825,9 +829,11 @@ class _PpmTabState extends State<_PpmTab> {
                 )
               : SingleChildScrollView(
                   child: Column(
-                    children: logs.map((h) {
-                      final device = devicesById[h['device_id']];
-                      final isEmergency = h['type'] == 'طارئة';
+                    children: grouped.entries.map((e) {
+                      final device = devicesById[e.key];
+                      final visits = e.value;
+                      final last = visits.first;
+                      final lastTech = (last['technician'] as String?) ?? '';
                       return Container(
                         margin: const EdgeInsets.only(bottom: 8),
                         padding: const EdgeInsets.all(10),
@@ -840,7 +846,6 @@ class _PpmTabState extends State<_PpmTab> {
                           crossAxisAlignment: CrossAxisAlignment.start,
                           children: [
                             Row(
-                              mainAxisAlignment: MainAxisAlignment.spaceBetween,
                               children: [
                                 Expanded(
                                   child: InkWell(
@@ -856,28 +861,22 @@ class _PpmTabState extends State<_PpmTab> {
                                     ),
                                   ),
                                 ),
-                                if (isEmergency)
-                                  Container(
-                                    padding: const EdgeInsets.symmetric(horizontal: 7, vertical: 2),
-                                    decoration: BoxDecoration(color: _amber.withValues(alpha: 0.15), borderRadius: BorderRadius.circular(20)),
-                                    child: Text(tr(widget.isEnglish, 'طارئة'), style: const TextStyle(color: _amber, fontSize: 9.5, fontWeight: FontWeight.w700)),
+                                Container(
+                                  padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 2),
+                                  decoration: BoxDecoration(color: _indigo.withValues(alpha: 0.15), borderRadius: BorderRadius.circular(20)),
+                                  child: Text(
+                                    '${tr(widget.isEnglish, 'عدد الصيانات')}: ${visits.length}',
+                                    style: const TextStyle(color: _indigo, fontSize: 10.5, fontWeight: FontWeight.w700),
                                   ),
+                                ),
                               ],
                             ),
-                            const SizedBox(height: 2),
-                            Row(
-                              mainAxisAlignment: MainAxisAlignment.spaceBetween,
-                              children: [
-                                Text(_fmtDateTime(h['performed_at'] as String?), style: const TextStyle(color: Colors.white54, fontSize: 11.5)),
-                                if ((h['technician'] as String?)?.isNotEmpty ?? false)
-                                  Text(h['technician'] as String, style: const TextStyle(color: Colors.white54, fontSize: 11)),
-                              ],
+                            const SizedBox(height: 4),
+                            Text(
+                              '${tr(widget.isEnglish, 'آخر صيانة')}: ${_fmtDateTime(last['performed_at'] as String?)}'
+                              '${lastTech.isEmpty ? '' : '   •   $lastTech'}',
+                              style: const TextStyle(color: Colors.white54, fontSize: 11.5),
                             ),
-                            if ((h['notes'] as String?)?.isNotEmpty ?? false)
-                              Padding(
-                                padding: const EdgeInsets.only(top: 4),
-                                child: Text(h['notes'] as String, style: const TextStyle(color: Colors.white70, fontSize: 12)),
-                              ),
                           ],
                         ),
                       );
